@@ -87,6 +87,7 @@ SRC += $(RTOSSRCDIR)/queue.c
 SRC += $(RTOSSRCDIR)/tasks.c
 SRC += $(RTOSPORTSRCDIR)/port.c
 SRC += $(RTOSMEMSRCDIR)/heap_2.c
+SRC += $(RTOSMEMSRCDIR)/alloc.c
 
 
 ## EEprom Emulation AppNote Code

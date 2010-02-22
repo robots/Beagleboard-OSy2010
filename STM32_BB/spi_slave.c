@@ -4,29 +4,41 @@
  * 2009-2010 Michal Demin
  *
  */
-/*#include "FreeRTOS.h"
+
+#include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
-#include "semphr.h"
-*/
+
 #include "platform.h"
 #include "stm32f10x.h"
 
 #include "spi_slave.h"
+
+typedef (void)(*func)(void) DMA_Callback_t;
+
+#define DMA_QUEUE_SIZE      (5)
+#define DMA_WORKER_PRIORITY (1)
+
 
 enum {
 	SPI1_CMD,
 	SPI1_DATA
 };
 
-uint8_t SPI1_Cmd;
 /* specifies what dma transfer is finishing next */
 uint8_t SPI1_DMA_Type = SPI1_CMD;
 
+/* command received */
+uint8_t SPI1_Cmd;
 
-typedef (void)(*func)(void) DMA_Callback_t;
+/* queue for worker thread */
+xQueueHandle xDMAQueue = NULL;
 
+/* callback */
 DMA_Callback_t DMA_Callback;
+
+static void taskDMAWorker( void *pvParameters );
+
 
 void SPI1_Slave_Init() {
 	
@@ -34,6 +46,9 @@ void SPI1_Slave_Init() {
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 	DMA_InitTypeDef DMA_InitStructure;
+	
+	xInputQueue = xQueueCreate(DMA_QUEUE_SIZE, sizeof(DMA_Callback_t));
+	xTaskCreate( taskDMAWorker, ( signed char * ) "DMAWork", configMINIMAL_STACK_SIZE, NULL, DMA_WORKER_PRIORITY, NULL );
 	
 	// SPI module enable
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
@@ -108,6 +123,16 @@ void SPI1_Slave_Init() {
 
 }
 
+static void taskDMAWorker( void *pvParameters ) {
+	DMA_Callback_t tmpCallback;
+
+	while (1) {
+		xQueueReceive( xDMAQueue, &tmpCallback, maxPORT_DELAY);
+		if (tmpCallback != NULL) {
+			tmpCallback();
+		}
+	}
+}
 
 void SPI1_IRQHandler(void) {
 	// clear the interrupt pending flag
@@ -126,18 +151,23 @@ void SPI1_IRQHandler(void) {
 
 /* ISR for DMA1 Channel2 */ 
 void DMA1_Channel2_IRQHandler(void) {
+	static portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
+
 	/* disable DMA */
 	DMA1_Channel2->CCR &= CCR_ENABLE_Reset;
 	/* clear int pending bit */
 	DMA1->IFCR = DMA1_IT_GL2;
 
 	if (SPI1_DMA_Type == SPI1_DATA) {
-		SPI1_DMA_Type = SPI1_DATA; // next is command
+		xQueueSendFromISR( xDMAQueue, &DMA_Callback, &pxHigherPriorityTaskWoken);
+		DMA_Callback = NULL;
+		SPI1_DMA_Type = SPI1_DATA; // next is data
 		DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
 		DMA1_Channel2->CNDTR = 1;
 		DMA1_Channel3->CCR |= CCR_ENABLE_Set;
+		portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
 	} else {
-		SPI1_DMA_Type = SPI1_DATA; // next is data
+		SPI1_DMA_Type = SPI1_DATA; // return to command mode
 		
 		/* we have time to setup another trancation */
 		if (SPI1_Cmd & CMD_WRITE) {
@@ -160,7 +190,7 @@ void DMA1_Channel2_IRQHandler(void) {
 					break;
 				case CAN_TX:
 					DMA_Callback = CANController_TxHandle;
-					DMA1_Channel2->CMAR = (uint32_t)CANController_TxBuffer;
+					DMA1_Channel2->CMAR = (uint32_t)CANController_Tx;
 					DMA1_Channel2->CNDTR = sizeof(struct CANController_CANMessage_t);
 					break;
 				case PWR_CTRL:
@@ -205,12 +235,12 @@ void DMA1_Channel2_IRQHandler(void) {
 					break;
 				case CAN_RX0:
 					DMA_Callback = CANController_Rx0Handle; // to "move" the fifo
-					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0Buffer;
+					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0;
 					DMA1_Channel3->CNDTR = sizeof(struct CANController_CANMessage_t);
 					break;
 				case CAN_RX1:
 					DMA_Callback = CANController_Rx1Handle;
-					DMA1_Channel3->CMAR = (uint32_t)CANController_RX1Buffer;
+					DMA1_Channel3->CMAR = (uint32_t)CANController_RX1;
 					DMA1_Channel3->CNDTR = sizeof(struct CANController_CANMessage_t);
 					break;
 				case PWR_STATUS:
@@ -244,12 +274,25 @@ void DMA1_Channel2_IRQHandler(void) {
 
 /* ISR for DMA1 Channel3 */
 void DMA1_Channel3_IRQHandler(void) {
+	static portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
+
 	/* disable DMA Channel */
 	DMA1_Channel3->CCR &= CCR_ENABLE_Reset;
 	/* clear int pending bit */
 	DMA1->IFCR = DMA1_IT_GL3;
 
-	// we have sent data, awaiting command
+	// send data to worker thread
+	xQueueSendFromISR( xDMAQueue, &DMA_Callback, &pxHigherPriorityTaskWoken);
+	DMA_Callback = NULL;
+
+	// awaiting command
 	SPI1_DMA_Type = SPI1_CMD;
+
+	// enable dma
+	DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
+	DMA1_Channel2->CNDTR = 1;
+	DMA1_Channel3->CCR |= CCR_ENABLE_Set;
+
+	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
 }
 

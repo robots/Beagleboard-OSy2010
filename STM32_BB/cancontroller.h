@@ -2,29 +2,34 @@
 #define CANCONTROLLER_H_
 
 
-#define CAN_CMD_WRITE 0x40
-
-// commands
-#define CAN_STATUS 0x01 // r, 2
-#define CAN_CTRL   0x02 // w, 2
-#define CAN_TIMING 0x03 // rw, 4
-#define CAN_INTE   0x04 // rw, 2
-#define CAN_INTF   0x05 // r, 2
-#define CAN_TX     0x06 // w, 13
-#define CAN_RX0    0x07 // r, 13
-#define CAN_RX1    0x08 // r, 13
-
-// TODO: filters
-
 struct can_timing_t {
 	uint16_t brp;
 	uint16_t ts; //swj[9:8] ts2[6:4] ts1[3:0]
-}
+} __attribute__ ((packed));
 
+#define CAN_MSG_SIZE	0x0B
+#define CAN_MSG_RTR   0x08
+#define CAN_MSG_EID   0x10
 
-void CANController_ISR(uint8_t);
+struct can_message_t {
+	uint8_t flags;
+	uint8_t id[4];
+	uint8_t data[8];
+} __attribute__ ((packed));
+
+void CANController_Rx1Handle(void);
+void CANController_Rx0Handle(void);
+void CANController_TxHandle(void);
+void CANController_ControlHandle(void);
+void CANController_TimingHandle(void);
+
+extern uint16_t CANController_Status; 
 
 extern struct can_timing_t CANController_Timing;
+
+extern struct can_message_t *CANController_RX0;
+extern struct can_message_t *CANController_RX1;
+extern struct can_message_t *CANController_TX;
 
 #endif
 
