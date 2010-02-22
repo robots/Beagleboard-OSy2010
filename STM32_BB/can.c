@@ -14,11 +14,18 @@
 
 #include "can.h"
 
+xSemaphoreHandle xCAN_Sem = NULL;
+
+static void taskCANWorker( void *pvParameters );
+
 void CAN_Init() {
 	CAN_InitTypeDef CAN_InitStructure;
 	CAN_FilterInitTypeDef CAN_FilterInitStructure;
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
+	
+	vSemaphoreCreateBinary( xCAN_Sem );
+	xTaskCreate( taskCANWorker, ( signed char * ) "CANWork", configMINIMAL_STACK_SIZE, NULL, CAN_WORKER_PRIORITY, NULL );
 
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN, ENABLE);
 
@@ -35,6 +42,15 @@ void CAN_Init() {
 	CAN_DeInit();
 	CAN_StructInit(&CAN_InitStructure);
 	
+}
+
+static void taskCANWorker( void *pvParameters ) {
+
+	while (1) {
+		xSemaphoreTake(xCAN_Sem, maxPORT_DELAY);
+		/* if we were woken, there is something to transmit ! */
+		
+	}
 }
 
 /* TX interrupt */
