@@ -1,19 +1,18 @@
-#include "FreeRTOS.h"
+/*#include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
-
+*/
 #include "platform.h"
 #include "stm32f10x.h"
 
 #include "cancontroller.h"
 
 
-uint16_t CANController_Status = 0x00;
-uint16_t CANController_Status_Last = 0x00; 
-uint16_t CANController_Control = 0x00 ;
-uint16_t CANController_Control_Last = 0x00;
-uint32_t CANController_Error = 0x00;
+uint16_t CANController_Status = 0x0000;
+uint16_t CANController_Control = 0x0000;
+uint16_t CANController_Control_Last = 0x0000;
+uint32_t CANController_Error = 0x0000;
 
 struct can_timing_t CANController_Timing;
 
@@ -58,14 +57,20 @@ void CANController_Init(void) {
 
 /* message has been read from RX0, shift the buffer */
 void CANController_Rx0Handle(void) {
+	uint16_t rx0_count;
+
 	CANBuf_ReadDone(&CANController_RX0Buffer);
 	CANController_RX0 = CANBuf_ReadAddr(&CANController_RX0Buffer);
+	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+	rx0_count <<= 16;
+	CANController_Status = (CANController_Status & CAN_STAT_RX0) | rx0_count;
 }
 
 /* should be called from ISR */
 static void CANController_Rx0Receive(void) {
 	static int offset = CANBuf_GetNextWriteAddr(&CANController_RX0Buffer); 
 	static struct can_message_t *RX0 = &CANController_RX0Buffer[offset];
+	static uint16_t rx0_count;
 
 	RX0->flags = 0x00;
 
@@ -112,18 +117,28 @@ static void CANController_Rx0Receive(void) {
 		CANBuf_Written(&CANController_RX0Buffer);
 		SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
 	}
+
+	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+	rx0_count <<= 16;
+	CANController_Status = (CANController_Status & CAN_STAT_RX0) | rx0_count;
 }
 
 /* message has been read from RX1, shift the buffer */
 void CANController_Rx1Handle(void) {
+	uint16_t rx1_count;
+
 	CANBuf_ReadDone(&CANController_RX1Buffer);
 	CANController_RX1 = CANBuf_ReadAddr(&CANController_RX1Buffer);
+	rx1_count = CANBuf_GetAvailable(&CANController_RX1Buffer);
+	rx1_count <<= 24;
+	CANController_Status = (CANController_Status & CAN_STAT_RX1) | rx1_count;
 }
 
 /* should be called from ISR */
 static void CANController_Rx1Receive(void) {
 	static int offset = CANBuf_GetNextWriteAddr(&CANController_RX1Buffer); 
 	static struct can_message_t *RX1 = &CANController_RX1Buffer[offset];
+	static uint16_t rx1_count;
 
 	RX1->flags = 0x00;
 
@@ -169,6 +184,10 @@ static void CANController_Rx1Receive(void) {
 		CANBuf_Written(&CANController_RX1Buffer);
 		SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
 	}
+
+	rx1_count = CANBuf_GetAvailable(&CANController_RX1Buffer);
+	rx1_count <<= 24;
+	CANController_Status = (CANController_Status & CAN_STAT_RX1) | rx1_count;
 }
 /* new message to be transmitted */
 void CANController_TxHandle(void) {
@@ -210,7 +229,7 @@ void CANController_TxHandle(void) {
 
 	/* if no TX mailbox empty signal host */
 	if (!(CAN1->TSR & (TSR_TME0 | TSR_RME1 | TSR_TME2))) {
-		CANController_Status |= CAN_STAT
+		CANController_Status |= CAN_STAT_TXF;
 	}
 }
 
@@ -257,6 +276,7 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 	}
 	/* notify host that message was sent ! */
 	SYS_ChangeIntFlag(SYS_INT_CANTXIF);
+	CANController_Status &= ~CAN_STAT_TXF;
 }
 
 /* RX0 fifo interrupt */

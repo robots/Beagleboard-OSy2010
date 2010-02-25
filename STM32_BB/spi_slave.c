@@ -224,9 +224,12 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptEnable);
 					break;
 				case SYS_INTF:
-					DMA_Callback = SYS_IntFlagReadHandle;
 					DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);
+					break;
+				case CAN_STATUS:
+					DMA1_Channel3->CMAR = (uint32_t)&CANController_Error;
+					DMA1_Channel3->CNDTR = sizeof(CANController_Error);
 					break;
 				case CAN_STATUS:
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_Status;
@@ -238,17 +241,17 @@ void DMA1_Channel2_IRQHandler(void) {
 					break;
 				case CAN_TIMING:
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_Timing;
-					DMA1_Channel3->CNDTR = sizeof(CANController_Timing);
+					DMA1_Channel3->CNDTR = sizeof(struct can_timing_t);
 					break;
 				case CAN_RX0:
 					DMA_Callback = CANController_Rx0Handle;
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0;
-					DMA1_Channel3->CNDTR = sizeof(struct CANController_canmessage_t);
+					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
 					break;
 				case CAN_RX1:
 					DMA_Callback = CANController_Rx1Handle;
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX1;
-					DMA1_Channel3->CNDTR = sizeof(struct CANController_canmessage_t);
+					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
 					break;
 				case PWR_STATUS:
 					DMA1_Channel3->CMAR = (uint32_t)&PWR_Status;

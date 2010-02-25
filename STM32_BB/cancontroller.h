@@ -2,8 +2,10 @@
 #define CANCONTROLLER_H_
 
 /* status bit fields */
-#define CAN_STATUS_TXE   0x0001
-#define CAN_STATUS_RXNE  0x0002
+#define CAN_STAT_TXF   0x0001
+#define CAN_STAT_RX0   0x0F00
+#define CAN_STAT_RX1   0xF000
+
 
 struct can_timing_t {
 	uint16_t brp; // brp[0:9]
@@ -26,7 +28,9 @@ void CANController_TxHandle(void);
 void CANController_ControlHandle(void);
 void CANController_TimingHandle(void);
 
+extern uint16_t CANController_Error; 
 extern uint16_t CANController_Status; 
+extern uint16_t CANController_Control; 
 
 extern struct can_timing_t CANController_Timing;
 
