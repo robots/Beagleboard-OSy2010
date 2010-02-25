@@ -12,11 +12,14 @@
 #include "platform.h"
 #include "stm32f10x.h"
 
+#include "commands.h"
+
 #include "spi_slave.h"
 
 typedef (void)(*func)(void) DMA_Callback_t;
 
 #define DMA_QUEUE_SIZE      (5)
+/* needs to be highest priority */
 #define DMA_WORKER_PRIORITY (1)
 
 
@@ -145,7 +148,7 @@ void SPI1_IRQHandler(void) {
 		DMA1_Channel2->CCR |= CCR_ENABLE_Set;
 	} else {
 		/* enable TX DMA */
-		DMA1_Channel2->CCR |= CCR_ENABLE_Set;
+		DMA1_Channel3->CCR |= CCR_ENABLE_Set;
 	}
 }
 
@@ -170,13 +173,17 @@ void DMA1_Channel2_IRQHandler(void) {
 		SPI1_DMA_Type = SPI1_DATA; // return to command mode
 		
 		/* we have time to setup another trancation */
-		if (SPI1_Cmd & CMD_WRITE) {
+		if (SPI1_Cmd & CMD_WRITE) { /* WRITE */
 			SPI1->CR2 |= (uint16_t)(1 << SPI_I2S_IT_RXNE);
 			switch (SPI1_Cmd & 0x7F) {
 				case SYS_INTE:
-					DMA_Callback = SYS_InterruptEnableHandle;
 					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptEnable;
 					DMA1_Channel2->CNDTR = sizeof(SYS_InterruptEnable);
+					break;
+				case SYS_INTF:
+					DMA_Callback = SYS_IntFlagWriteHandle;
+					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptFlag;
+					DMA1_Channel2->CNDTR = sizeof(SYS_InterruptFlag);
 					break;
 				case CAN_TIMING:
 					DMA_Callback = CANController_TimingHandle;
@@ -198,22 +205,17 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel2->CMAR = (uint32_t)&PWR_Control;
 					DMA1_Channel2->CNDTR = sizeof(PWR_Control);
 					break;
-				case PWR_I_AC_SET:
-					DMA_Callback = PWR_ACCurrentHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&PWR_AC_PWM;
-					DMA1_Channel2->CNDTR = sizeof(PWR_AC_PWM);
-					break;
-				case PWR_I_BAT_SET:
-					DMA_Callback = PWR_BATCurrentHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&PWR_BAT_PWM;
-					DMA1_Channel2->CNDTR = sizeof(PWR_BAT_PWM);
+				case PWR_I_SET:
+					DMA_Callback = PWR_CurrentHandle;
+					DMA1_Channel2->CMAR = (uint32_t)&PWR_I_Set;
+					DMA1_Channel2->CNDTR = sizeof(PWR_I_Set);
 					break;
 				default:
 					/* fault ... receive command byte again */
 					SPI1_DMA_Type = SPI1_CMD;
 					break;
 			}
-		} else {
+		} else { /* READ */
 			SPI1->CR2 |= (uint16_t)(1 << SPI_I2S_IT_TXE);
 			DMA_Callback = NULL;
 			switch (SPI1_Cmd) {
@@ -222,6 +224,7 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptEnable);
 					break;
 				case SYS_INTF:
+					DMA_Callback = SYS_IntFlagReadHandle;
 					DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);
 					break;
@@ -229,39 +232,39 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_Status;
 					DMA1_Channel3->CNDTR = sizeof(CANController_Status);
 					break;
+				case CAN_CTRL:
+					DMA1_Channel3->CMAR = (uint32_t)&CANController_Control;
+					DMA1_Channel3->CNDTR = sizeof(CANController_Control);
+					break;
 				case CAN_TIMING:
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_Timing;
 					DMA1_Channel3->CNDTR = sizeof(CANController_Timing);
 					break;
 				case CAN_RX0:
-					DMA_Callback = CANController_Rx0Handle; // to "move" the fifo
+					DMA_Callback = CANController_Rx0Handle;
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0;
-					DMA1_Channel3->CNDTR = sizeof(struct CANController_CANMessage_t);
+					DMA1_Channel3->CNDTR = sizeof(struct CANController_canmessage_t);
 					break;
 				case CAN_RX1:
 					DMA_Callback = CANController_Rx1Handle;
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX1;
-					DMA1_Channel3->CNDTR = sizeof(struct CANController_CANMessage_t);
+					DMA1_Channel3->CNDTR = sizeof(struct CANController_canmessage_t);
 					break;
 				case PWR_STATUS:
 					DMA1_Channel3->CMAR = (uint32_t)&PWR_Status;
 					DMA1_Channel3->CNDTR = sizeof(PWR_Status);
 					break;
-				case PWR_U_BAT:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Voltage_Bat;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Voltage_Bat);
+				case PWR_CTRL:
+					DMA1_Channel2->CMAR = (uint32_t)&PWR_Control;
+					DMA1_Channel2->CNDTR = sizeof(PWR_Control);
 					break;
-				case PWR_U_AC:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Voltage_AC;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Voltage_AC);
+				case PWR_I_SET:
+					DMA1_Channel3->CMAR = (uint32_t)&PWR_I_Set;
+					DMA1_Channel3->CNDTR = sizeof(PWR_I_Set);
 					break;
-				case PWR_I_BAT:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Current_Bat;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Current_Bat);
-					break;
-				case PWR_I_SYS:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Current_Sys;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Current_Sys);
+				case PWR_DATA:
+					DMA1_Channel3->CMAR = (uint32_t)&PWR_Measurement_Data;
+					DMA1_Channel3->CNDTR = sizeof(PWR_Measurement_Data);
 					break;
 				default:
 					/* fault ... receive command byte again */
@@ -291,7 +294,7 @@ void DMA1_Channel3_IRQHandler(void) {
 	// enable dma
 	DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
 	DMA1_Channel2->CNDTR = 1;
-	DMA1_Channel3->CCR |= CCR_ENABLE_Set;
+	DMA1_Channel2->CCR |= CCR_ENABLE_Set;
 
 	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
 }

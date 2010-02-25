@@ -1,19 +1,22 @@
 #ifndef CANCONTROLLER_H_
 #define CANCONTROLLER_H_
 
+/* status bit fields */
+#define CAN_STATUS_TXE   0x0001
+#define CAN_STATUS_RXNE  0x0002
 
 struct can_timing_t {
-	uint16_t brp;
-	uint16_t ts; //swj[9:8] ts2[6:4] ts1[3:0]
+	uint16_t brp; // brp[0:9]
+	uint16_t ts; // res[15] lbkm[14] res[13:10] swj[9:8] res[7] ts2[6:4] ts1[3:0]
 } __attribute__ ((packed));
 
-#define CAN_MSG_SIZE	0x0B
-#define CAN_MSG_RTR   0x08
-#define CAN_MSG_EID   0x10
+#define CAN_MSG_SIZE	0x0F // DLC[0:3]
+#define CAN_MSG_RTR   0x10 // RTR[4]
+#define CAN_MSG_EID   0x20 // EID[5]
 
 struct can_message_t {
 	uint8_t flags;
-	uint8_t id[4];
+	uint32_t id;
 	uint8_t data[8];
 } __attribute__ ((packed));
 

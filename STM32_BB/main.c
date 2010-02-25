@@ -54,8 +54,6 @@ void GPIO_Configuration(void)
 
 int main(void)
 {
-	uint32_t dly;
-
 	/* System Clocks Configuration */
 	RCC_Configuration();
 
@@ -64,6 +62,12 @@ int main(void)
 
 	/* Configure the GPIO ports */
 	GPIO_Configuration();
+	
+	SYS_Init();
+	SPI
+	CANController_Init();
+	
+
 	LED_YELLOW(Bit_RESET);
 	RTCInit();
 

@@ -14,6 +14,13 @@ void CANBuf_Init(struct can_buffer_t *b) {
 	b->read = 0;
 }
 
+uint8_t CANBuf_Empty(struct can_buffer_t *b) {
+	if ( b->write == b->read) {
+		return 1;
+	}
+	return 0;
+}
+
 uint16_t CANBuf_GetAvailable(struct can_buffer_t *b) {
 	int32_t out = b->write - b->read;
 
