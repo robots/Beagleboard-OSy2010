@@ -1,0 +1,15 @@
+
+CAN controller:
+control register - WIP
+status register
+enable interrupts
+
+Power:
+Setup ADC with DMA
+PWM output for charger
+
+SYS:
+done ?
+
+SPI_Slave:
+done ?
