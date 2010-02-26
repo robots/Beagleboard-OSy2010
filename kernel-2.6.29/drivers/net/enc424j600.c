@@ -230,7 +230,7 @@ static int enc424j600_read_instr(struct enc424j600_net *priv, u8 instr, u8 n)
 	spi_message_init(&m);
 	spi_message_add_tail(&instr_transfer, &m);
 
-	if(n)
+	if (n)
 		spi_message_add_tail(&data_transfer);
 
 	int ret = spi_sync(priv->spi, &m); 
@@ -239,6 +239,42 @@ static int enc424j600_read_instr(struct enc424j600_net *priv, u8 instr, u8 n)
 		printk(KERN_DEBUG DRV_NAME ": %s() failed: ret = %d\n",
 			__func__, ret);
 	
+	return ret;
+}
+
+/*
+ * Write a 16bit special function register.
+ * The @sfr parameters takes address of the low byte of the register.
+ * Takes care of the endiannes & buffers.
+ * Uses banked write instruction.
+ */
+static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 data)
+{
+	int ret;
+
+	enc424j600_set_bank(priv, sfr);
+
+	priv->spi_transfer_buf[0] = data & 0xFF;
+	priv->spi_transfer_buf[1] data >> 8;
+	ret = enc424j600_write_instr(priv, WCR(sfr & ADDR_MASK), 2);
+
+	return ret;
+}
+/*
+ * Read a 16bit special function register.
+ * The @sfr parameters takes address of the low byte of the register.
+ * Takes care of the endiannes & buffers.
+ * Uses banked read instruction.
+ */
+static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16* data)
+{
+	int ret;
+
+	enc424j600_set_bank(priv, sfr);
+	ret = enc424j600_read_instr(priv, RCR(sfr & ADDR_MASK), 2);
+	*data = priv->spi_transfer_buf[0] |
+		priv->spi_transfer_buf[1] << (u16)8;
+
 	return ret;
 }
 
@@ -254,15 +290,11 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
 	do{
-		priv->spi_transfer_buf[0] = 0x34;
-		priv->spi_transfer_buf[1] = 0x12;
-		enc424j600_write_instr(priv, WCR(EUDASTL), 2);
+		u16 test;
 
-		priv->spi_transfer_buf[0] = 0x0;
-		priv->spi_transfer_buf[1] = 0x0;
-		enc424j600_read_instr(priv, WCR(EUDASTL), 2);
-	} while(priv->spi_transfer_buf[0] != 0x34 && priv->spi_transfer_buf[1] != 0x12);
-
+		enc424j600_write_16b_sfr(priv, EDUASTL, 0x1234);
+		enc424j600_read_16b_sfr(priv, EDUASTL, &test);
+	} while (test != 0x1234);
 
 	do{
 		enc424j600_read_instr(priv, RCR(ESTATH), 1);
@@ -279,36 +311,22 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 }
 
 /*
- * select the current register bank if necessary
+ * Select the current register bank if necessary to be able to read @addr.
  */
 static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
 {
-/*	u8 b = (addr & BANK_MASK) >> 5;
+	u8 b = (addr & BANK_MASK) >> BANK_SHIFT;
 
-	/ * These registers (EIE, EIR, ESTAT, ECON2, ECON1)
-	 * are present in all banks, no need to switch bank
-	 * /
-	if (addr >= EIE && addr <= ECON1)
+	/ * These registers are present in all banks, no need
+	to switch bank * /
+	if (addr >= EDUASTL && addr <= ECON1H)
+		return;
+	if(priv->bank == b)
 		return;
 
-	/ * Clear or set each bank selection bit as needed * /
-	if ((b & ECON1_BSEL0) != (priv->bank & ECON1_BSEL0)) {
-		if (b & ECON1_BSEL0)
-			spi_write_op(priv, ENC28J60_BIT_FIELD_SET, ECON1,
-					ECON1_BSEL0);
-		else
-			spi_write_op(priv, ENC28J60_BIT_FIELD_CLR, ECON1,
-					ECON1_BSEL0);
-	}
-	if ((b & ECON1_BSEL1) != (priv->bank & ECON1_BSEL1)) {
-		if (b & ECON1_BSEL1)
-			spi_write_op(priv, ENC28J60_BIT_FIELD_SET, ECON1,
-					ECON1_BSEL1);
-		else
-			spi_write_op(priv, ENC28J60_BIT_FIELD_CLR, ECON1,
-					ECON1_BSEL1);
-	}
-	priv->bank = b;*/
+	enc424j600_write_instr(priv, BXSEL(b), 0);
+
+	priv->bank = b;
 }
 
 /*

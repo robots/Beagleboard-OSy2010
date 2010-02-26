@@ -15,6 +15,7 @@
  */
 #define ADDR_MASK	0x1F
 #define BANK_MASK	0x60
+#define BANK_SHIFT	5
 
 /* All-bank registers */
 #define EUDASTL		0x16
@@ -145,7 +146,9 @@
 #define PHSTAT2		0x1B
 #define PHSTAT3		0x1F
 
-/* Single-byte nstructions */
+/* Single-byte instructions */
+#define BXSEL(bank)	(0xC | (bank & (BANK_MASK >> BANK_SHIFT)) * 2)
+				/* Bank X Select */
 #define B0SEL		0xC0	/* Bank 0 Select */
 #define B1SEL		0xC2	/* Bank 1 Select */
 #define B2SEL		0xC4	/* Bank 2 Select */
