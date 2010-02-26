@@ -73,7 +73,7 @@ void GPIO_Configuration(void)
 	LED_YELLOW(Bit_SET);
 	LED_GREEN(Bit_SET);
 	LED_RED(Bit_SET);
-	SPI_INT_WRITE(Bit_SET);				
+	SPI_INT_WRITE(Bit_SET);
 
 
 }

@@ -1,6 +1,10 @@
 #ifndef POWER_H_
 #define POWER_H_
 
+#define PWR_CTRL_ADC 0x0001
+#define PWR_CTRL_PWM 0x0002
+#define PWR_CTRL_EN  0x0004 // charger enable 
+#define PWR_CTRL_ACS 0x0008 // ac select
 
 struct pwr_data_t {
 	uint16_t i_bat;
@@ -18,6 +22,11 @@ extern struct pwr_data_t PWR_Measurement_Data;
 extern struct pwr_i_set_t PWR_I_Set;
 extern uint16_t PWR_Control;
 extern uint16_t PWR_Status;
+
+
+void PWR_Init();
+void PWR_ControlHandle();
+void PWR_CurrentHandle();
 
 #endif
 
