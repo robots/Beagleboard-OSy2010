@@ -185,6 +185,11 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptFlag;
 					DMA1_Channel2->CNDTR = sizeof(SYS_InterruptFlag);
 					break;
+				case SYS_RESET:
+					DMA_Callback = SYS_ResetHandler;
+					DMA1_Channel2->CMAR = (uint32_t)&SYS_Reset;
+					DMA1_Channel2->CNDTR = sizeof(SYS_Reset);
+					break;
 				case CAN_TIMING:
 					DMA_Callback = CANController_TimingHandle;
 					DMA1_Channel2->CMAR = (uint32_t)&CANController_Timing;
@@ -226,6 +231,10 @@ void DMA1_Channel2_IRQHandler(void) {
 				case SYS_INTF:
 					DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);
+					break;
+				case SYS_ID:
+					DMA1_Channel3->CMAR = (uint32_t)&SYS_ID;
+					DMA1_Channel3->CNDTR = sizeof(SYS_ID);
 					break;
 				case CAN_STATUS:
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_Error;

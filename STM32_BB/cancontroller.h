@@ -1,10 +1,36 @@
 #ifndef CANCONTROLLER_H_
 #define CANCONTROLLER_H_
 
+/* control bit fields */
+#define CAN_CTRL_INIT  0x0001 /* enter init mode */
+#define CAN_CTRL_LOOP  0x0002 /* enable loopback mode */
+#define CAN_CTRL_OSM   0x0004 /* enable One Shot Mode */
+#define CAN_CTRL_SILM  0x0008 /* Listen only - silent mode */
+#define CAN_CTRL_RST   0x0010 /* bxCan master reset */
+
 /* status bit fields */
-#define CAN_STAT_TXF   0x0001
-#define CAN_STAT_RX0   0x0F00
-#define CAN_STAT_RX1   0xF000
+#define CAN_STAT_TXF   0x0001 /* TX fifo Full */
+#define CAN_STAT_RX0   0x0F00 /* no of messages queued in RX0 */
+#define CAN_STAT_RX1   0xF000 /* no of messages queued in RX1 */
+
+/* error bit fields */
+#define CAN_ERR_REC    0xFF000000 /* Receive error count */
+#define CAN_ERR_TEC    0x00FF0000 /* Transmit error count */
+#define CAN_ERR_LEC    0x00000070 /* Last error code */
+#define CAN_ERR_BOFF   0x00000004 /* Bus-off */
+#define CAN_ERR_EPVF   0x00000002 /* Error passive */
+#define CAN_ERR_EWGF   0x00000001 /* Error warning */
+
+/* LEC field */
+#define CAN_LEC_NOERR  0x00 /* No Error */
+#define CAN_LEC_STUFF  0x01 /* Stuff Error */
+#define CAN_LEC_FORM   0x02 /* Form Error */
+#define CAN_LEC_ACK    0x03 /* Ack Error */
+#define CAN_LEC_BRE    0x04 /* Bit recessive Error */
+#define CAN_LEC_BDE    0x05 /* Bit dominant Error */
+#define CAN_LEC_CRC    0x06 /* CRC Error */
+#define CAN_LEC_SW     0x07 /* Set by software */
+
 
 
 struct can_timing_t {

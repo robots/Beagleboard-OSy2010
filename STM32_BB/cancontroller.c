@@ -237,14 +237,42 @@ void CANController_ControlHandle(void) {
 	/* select the changed bits */
 	uint16_t change = CANController_Control_Last ^ CANController_Control;
 
+	if (change & CAN_CTRL_RST) {
+		if (CANController_Control & CAN_CTRL_RST) {
+			CAN1->MCR |= MCR_RESET;
+		}
+	}
+
+	if (change & CAN_CTRL_OSM) {
+		if (CANController_Control & CAN_CTRL_OSM) {
+			CAN1->MCR |= MCR_NART;
+		} else {
+			CAN1->MCR &= ~MCR_NART;
+		}
+	}
+
+	if (change & CAN_CTRL_LOOP) {
+		if (CANController_Control & CAN_CTRL_LOOP) {
+			CAN1->BTR |= BTR_LBKM;
+		} else {
+			CAN1->BTR &= ~BTR_LBKM;
+		}
+	}
+
+	if (change & CAN_CTRL_SIML) {
+		if (CANController_Control & CAN_CTRL_SIML) {
+			CAN1->BTR |= BTR_SILM;
+		} else {
+			CAN1->BTR &= ~BTR_SILM;
+		}
+	}
+	
 	if (change & CAN_CTRL_INIT) {
 		if (CANController_Control & CAN_CTRL_INIT) {
 			CAN1->MCR |= MCR_INRQ;
 		} else {
 			CAN1->MCR &= ~MCR_INRQ;
 		}
-	} else if (change & CAN_CTRL_LOOP) {
-
 	}
 
 	CANController_Control_Last = CANController_Control;

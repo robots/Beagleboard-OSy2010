@@ -1,11 +1,13 @@
 #ifndef COMMANDS_H_
 #define COMMANDS_H_
 
-/* REG numbers 0x00-0x3f */
+/* REG numbers 0x00-0x7f */
 
 /* global regs */
 #define SYS_INTE   0x01 /* RW */
 #define SYS_INTF   0x02 /* RO */
+#define SYS_ID     0x03 /* RO */
+#define SYS_RESET  0x04 /* WO */
 
 /* can related regs */
 #define CAN_STATUS 0x10 /* RW */

@@ -6,8 +6,12 @@
 #define SYS_INT_CANRX1IF 0x0004
 #define SYS_INT_CANERRIF 0x0008
 
+#define SYS_RESET_MAGIC  0xBABE
+
 extern uint16_t SYS_InterruptEnable;
 extern uint16_t SYS_InterruptFlag;
+extern uint16_t SYS_ID;
+extern uint16_t SYS_Reset;
 
 void SYS_ChangeIntFlag(uint16_t);
 void SYS_IntFlagWriteHandle(void);
