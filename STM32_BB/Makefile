@@ -60,7 +60,8 @@ STMEEEMULINCDIR = $(STMEEEMULDIR)/include
 # List C source files here. (C dependencies are automatically generated.)
 # use file-extension c for "c-only"-files
 ## Demo-Application:
-SRC = fault_handlers.c main.c spi.c adc.c timertest.c
+SRC = fault_handlers.c main.c spi_slave.c adc.c
+SRC += cancontroller.h
 ## compiler-specific sources
 SRC += startup_stm32f10x.c
 ## CMSIS for STM32

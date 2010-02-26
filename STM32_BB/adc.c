@@ -7,7 +7,7 @@
 void ADC_Setup(void) {
 
 	ADC_InitTypeDef   ADC_InitStructure;
-	
+
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
 	ADC_DeInit(ADC1);
 

@@ -3,7 +3,8 @@
 
 #include "cancontroller.h"
 
-#define CAN_BUFFER_SIZE 10
+/* DO NOT CHANGE !!!! CAN_STATUS depends on this !!!! */
+#define CAN_BUFFER_SIZE 16
 
 struct can_buffer_t {
 	struct can_message_t msgs[CAN_BUFFER_SIZE];
@@ -12,6 +13,8 @@ struct can_buffer_t {
 };
 
 void CANBuf_Init(struct can_buffer_t *);
+
+uint8_t CANBuf_Empty(struct can_buffer_t *b) {
 uint16_t CANBuf_GetAvailable(struct can_buffer_t *b);
 
 struct can_message_t *CANBuf_GetReadAddr(struct can_buffer_t *b);
