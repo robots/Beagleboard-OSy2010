@@ -1070,6 +1070,15 @@ L:	socketcan-core@lists.berlios.de (subscribers-only)
 W:	http://developer.berlios.de/projects/socketcan/
 S:	Maintained
 
+CAN NETWORK DRIVERS
+P:	Wolfgang Grandegger (preliminary!!!)
+M:	wg@grandegger.com
+P:	Oliver Hartkopp (preliminary!!!)
+M:	oliver.hartkopp@volkswagen.de
+L:	socketcan-core@lists.berlios.de (subscribers-only)
+W:	http://developer.berlios.de/projects/socketcan/
+S:	Maintained
+
 CELL BROADBAND ENGINE ARCHITECTURE
 P:	Arnd Bergmann
 M:	arnd@arndb.de

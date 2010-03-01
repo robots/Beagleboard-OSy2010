@@ -1248,6 +1248,10 @@ S: 8124 Constitution Apt. 7
 S: Sterling Heights, Michigan 48313
 S: USA
 
+N: Wolfgang Grandegger (preliminary!!!)
+E: wg@grandegger.com
+D: Controller Area Network (device drivers)
+
 N: William Greathouse
 E: wgreathouse@smva.com
 E: wgreathouse@myfavoritei.com
@@ -1376,6 +1380,7 @@ N: Oliver Hartkopp
 E: oliver.hartkopp@volkswagen.de
 W: http://www.volkswagen.de
 D: Controller Area Network (network layer core)
+D: Controller Area Network (device drivers) (preliminary!!!)
 S: Brieffach 1776
 S: 38436 Wolfsburg
 S: Germany
