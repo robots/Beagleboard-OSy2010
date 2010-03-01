@@ -13,7 +13,7 @@ USE_THUMB_MODE = YES
 MCU      = cortex-m3
 CHIP     = STM32F103T6U6
 BOARD    = EK_STM32F
-CLASS    = STM32F10X_MD
+CLASS    = STM32F10X_LD
 F_XTAL   = 16000000
 RAMSIZE  = 0x2800
 SYSCLOCK_CL = SYSCLK_FREQ_72MHz=72000000
@@ -60,8 +60,13 @@ STMEEEMULINCDIR = $(STMEEEMULDIR)/include
 # List C source files here. (C dependencies are automatically generated.)
 # use file-extension c for "c-only"-files
 ## Demo-Application:
-SRC = fault_handlers.c main.c spi_slave.c adc.c
-SRC += cancontroller.h
+SRC = fault_handlers.c main.c
+SRC += spi_slave.c
+SRC += cancontroller.c
+SRC += power.c
+SRC += sys.c
+SRC += canbuf.c
+
 ## compiler-specific sources
 SRC += startup_stm32f10x.c
 ## CMSIS for STM32
