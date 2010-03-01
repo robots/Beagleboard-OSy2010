@@ -37,7 +37,7 @@ VECTOR_TABLE_LOCATION=VECT_TAB_FLASH
 OUTDIR = $(RUN_MODE)
 
 # Target file name (without extension).
-TARGET = stm32_menu
+TARGET = stm32_bb
 
 RTOS_PORT = GCC/ARM_CM3
 #RTOS_PORT = GCC/ARM_CM3_MPU
@@ -68,13 +68,13 @@ SRC += sys.c
 SRC += canbuf.c
 
 ## compiler-specific sources
-SRC += startup_stm32f10x.c
+SRC += startup_stm32f10x_ld.c
 ## CMSIS for STM32
 SRC += $(CMSISDIR)/core_cm3.c
 SRC += $(CMSISDIR)/system_stm32f10x.c
 ## used parts of the STM-Library
-#SRC += $(STMSPDSRCDIR)/stm32f10x_usart.c
-#SRC += $(STMSPDSRCDIR)/stm32f10x_flash.c
+SRC += $(STMSPDSRCDIR)/stm32f10x_exti.c
+SRC += $(STMSPDSRCDIR)/stm32f10x_can.c
 SRC += $(STMSPDSRCDIR)/stm32f10x_gpio.c
 SRC += $(STMSPDSRCDIR)/stm32f10x_rcc.c
 SRC += $(STMSPDSRCDIR)/stm32f10x_spi.c
@@ -93,7 +93,9 @@ SRC += $(RTOSSRCDIR)/queue.c
 SRC += $(RTOSSRCDIR)/tasks.c
 SRC += $(RTOSPORTSRCDIR)/port.c
 SRC += $(RTOSMEMSRCDIR)/heap_2.c
-SRC += $(RTOSMEMSRCDIR)/alloc.c
+
+# needed for newlib
+#SRC += $(RTOSMEMSRCDIR)/alloc.c 
 
 
 ## EEprom Emulation AppNote Code

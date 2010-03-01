@@ -14,12 +14,12 @@ struct pwr_data_t {
 	uint16_t i_sys;
 	uint16_t v_bat;
 	uint16_t v_ac;
-} __attribute__ ((packet));
+} __attribute__ ((packed));
 
 struct pwr_i_set_t {
 	uint16_t i_ac;
 	uint16_t i_bat;
-} __attribute__ ((packet));
+} __attribute__ ((packed));
 
 extern struct pwr_data_t PWR_Measurement_Data;
 extern struct pwr_i_set_t PWR_I_Set;

@@ -1,10 +1,13 @@
-/*#include "FreeRTOS.h"
-#include "task.h"
+#include "FreeRTOS.h"
+/*#include "task.h"
 #include "queue.h"
 #include "semphr.h"
 */
 #include "platform.h"
 #include "stm32f10x.h"
+
+#include "sys.h"
+#include "canbuf.h"
 
 #include "cancontroller.h"
 
@@ -28,19 +31,19 @@ static void CANController_Rx0Receive(void) __attribute__ ((naked));
 static void CANController_Rx1Receive(void) __attribute__ ((naked));
 
 void CANController_Init(void) {
-	CAN_InitTypeDef CAN_InitStructure;
-	CAN_FilterInitTypeDef CAN_FilterInitStructure;
+	//CAN_InitTypeDef CAN_InitStructure;
+	//CAN_FilterInitTypeDef CAN_FilterInitStructure;
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 
 	CANBuf_Init(&CANController_RX0Buffer);
 	CANBuf_Init(&CANController_RX1Buffer);
 
-	CANController_RX0 = CANBuf_ReadAddr(&CANController_RX0Buffer);
-	CANController_RX1 = CANBuf_ReadAddr(&CANController_RX1Buffer);
+	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
+	CANController_RX1 = CANBuf_GetReadAddr(&CANController_RX1Buffer);
 	CANController_TX = &CANController_TXBuffer;
-	
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN, ENABLE);
+
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);
 
 	/* Configure CAN pin: RX */
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_11;
@@ -52,10 +55,26 @@ void CANController_Init(void) {
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	CAN_DeInit();
+	CAN_DeInit(CAN1);
+
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+
+	NVIC_InitStructure.NVIC_IRQChannel = USB_HP_CAN1_TX_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
+
+	NVIC_InitStructure.NVIC_IRQChannel = USB_LP_CAN1_RX0_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
+
+	NVIC_InitStructure.NVIC_IRQChannel = CAN1_RX1_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
+
+	NVIC_InitStructure.NVIC_IRQChannel = CAN1_SCE_IRQn;
+	NVIC_Init(&NVIC_InitStructure);
 
 	/* enable intertrupts */
-	CAN_IER = 0x00008F13; // enable all interrupts (except FIFOx full/overrun, sleep/wakeup)
+	CAN1->IER = 0x00008F13; // enable all interrupts (except FIFOx full/overrun, sleep/wakeup)
 
 	CANController_Control_Last = 0;
 	CANController_Control = 0;
@@ -67,7 +86,7 @@ void CANController_Rx0Handle(void) {
 	uint16_t rx0_count;
 
 	CANBuf_ReadDone(&CANController_RX0Buffer);
-	CANController_RX0 = CANBuf_ReadAddr(&CANController_RX0Buffer);
+	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
 	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
 	rx0_count <<= 16;
 	CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | rx0_count;
@@ -75,10 +94,10 @@ void CANController_Rx0Handle(void) {
 
 /* should be called from ISR */
 static void CANController_Rx0Receive(void) {
-	static int offset = CANBuf_GetNextWriteAddr(&CANController_RX0Buffer); 
-	static struct can_message_t *RX0 = &CANController_RX0Buffer[offset];
+	static struct can_message_t *RX0;
 	static uint16_t rx0_count;
 
+	RX0 = CANBuf_GetNextWriteAddr(&CANController_RX0Buffer);	
 	RX0->flags = 0x00;
 
 	/* check RTR */
@@ -108,7 +127,7 @@ static void CANController_Rx0Receive(void) {
 	RX0->data[7] = (uint8_t)0xFF & (CAN1->sFIFOMailBox[0].RDHR >> 24);
 
 	/* release fifo */
-	CAN1->RF0R = RF0R_RFOM0;
+	CAN1->RF0R = CAN_RF0R_RFOM0;
 
 	if (CANBuf_Empty(&CANController_RX0Buffer) == 1) {
 		/* Move the ring buffer */
@@ -135,7 +154,7 @@ void CANController_Rx1Handle(void) {
 	uint16_t rx1_count;
 
 	CANBuf_ReadDone(&CANController_RX1Buffer);
-	CANController_RX1 = CANBuf_ReadAddr(&CANController_RX1Buffer);
+	CANController_RX1 = CANBuf_GetReadAddr(&CANController_RX1Buffer);
 	rx1_count = CANBuf_GetAvailable(&CANController_RX1Buffer);
 	rx1_count <<= 24;
 	CANController_Status = (CANController_Status & ~CAN_STAT_RX1) | rx1_count;
@@ -143,10 +162,10 @@ void CANController_Rx1Handle(void) {
 
 /* should be called from ISR */
 static void CANController_Rx1Receive(void) {
-	static int offset = CANBuf_GetNextWriteAddr(&CANController_RX1Buffer); 
-	static struct can_message_t *RX1 = &CANController_RX1Buffer[offset];
+	static struct can_message_t *RX1;
 	static uint16_t rx1_count;
 
+	RX1 = CANBuf_GetNextWriteAddr(&CANController_RX1Buffer);
 	RX1->flags = 0x00;
 
 	/* check RTR */
@@ -176,7 +195,7 @@ static void CANController_Rx1Receive(void) {
 	RX1->data[7] = (uint8_t)0xFF & (CAN1->sFIFOMailBox[1].RDHR >> 24);
 
 	/* release fifo */
-	CAN1->RF1R = RF1R_RFOM1;
+	CAN1->RF1R = CAN_RF1R_RFOM1;
 
 	if (CANBuf_Empty(&CANController_RX1Buffer) == 1) {
 		/* Move the ring buffer */
@@ -199,11 +218,11 @@ static void CANController_Rx1Receive(void) {
 /* new message to be transmitted */
 void CANController_TxHandle(void) {
 	static uint16_t mailbox = 4;
-	if (CAN1->TSR & TSR_TME0) {
+	if (CAN1->TSR & CAN_TSR_TME0) {
 		mailbox = 0;
-	} else if (CAN1->TSR & TSR_TME1) {
+	} else if (CAN1->TSR & CAN_TSR_TME1) {
 		mailbox = 1;
-	} else if (CAN1->TSR & TSR_TME2) {
+	} else if (CAN1->TSR & CAN_TSR_TME2) {
 		mailbox = 2;
 	} else {
 		/* nothing empty ? :( this should not happen ! */
@@ -211,7 +230,7 @@ void CANController_TxHandle(void) {
 	}
 
 	/* clear message */
-	CAN1->sTxMailBox[mailbox].TIR &= TMIDxR_TXRQ;
+	CAN1->sTxMailBox[mailbox].TIR &= CAN_TI0R_TXRQ;
 	
 	/* add IDE and RTR fields */
 	CAN1->sTxMailBox[mailbox].TIR |= (CANController_TX->flags >> 3) & 0x06;
@@ -226,10 +245,10 @@ void CANController_TxHandle(void) {
 	CAN1->sTxMailBox[mailbox].TDHR = (((uint32_t)CANController_TX->data[7] << 24) | ((uint32_t)CANController_TX->data[6] << 16) | ((uint32_t)CANController_TX->data[5] << 8) | ((uint32_t)CANController_TX->data[4]));
 
 	/* mark message for transmission */
-	CAN1->sTxMailBox[mailbox].TIR |= TMIDxR_TXRQ;
+	CAN1->sTxMailBox[mailbox].TIR |= CAN_TI1R_TXRQ;
 
 	/* if no TX mailbox empty signal host */
-	if (!(CAN1->TSR & (TSR_TME0 | TSR_RME1 | TSR_TME2))) {
+	if (!(CAN1->TSR & CAN_TSR_TME)) {
 		CANController_Status |= CAN_STAT_TXF;
 	}
 }
@@ -240,40 +259,40 @@ void CANController_ControlHandle(void) {
 
 	if (change & CAN_CTRL_RST) {
 		if (CANController_Control & CAN_CTRL_RST) {
-			CAN1->MCR |= MCR_RESET;
+			CAN1->MCR |= CAN_MCR_RESET;
 		}
 	}
 
 	if (change & CAN_CTRL_OSM) {
 		if (CANController_Control & CAN_CTRL_OSM) {
-			CAN1->MCR |= MCR_NART;
+			CAN1->MCR |= CAN_MCR_NART;
 		} else {
-			CAN1->MCR &= ~MCR_NART;
+			CAN1->MCR &= ~CAN_MCR_NART;
 		}
 	}
 
 	if (change & CAN_CTRL_LOOP) {
 		if (CANController_Control & CAN_CTRL_LOOP) {
-			CAN1->BTR |= BTR_LBKM;
+			CAN1->BTR |= CAN_BTR_LBKM;
 		} else {
-			CAN1->BTR &= ~BTR_LBKM;
+			CAN1->BTR &= ~CAN_BTR_LBKM;
 		}
 	}
 
 	if (change & CAN_CTRL_SILM) {
 		if (CANController_Control & CAN_CTRL_SILM) {
-			CAN1->BTR |= BTR_SILM;
+			CAN1->BTR |= CAN_BTR_SILM;
 		} else {
-			CAN1->BTR &= ~BTR_SILM;
+			CAN1->BTR &= ~CAN_BTR_SILM;
 		}
 	}
 	
 	if (change & CAN_CTRL_INIT) {
 		if (CANController_Control & CAN_CTRL_INIT) {
-			CAN1->MCR |= MCR_INRQ;
+			CAN1->MCR |= CAN_MCR_INRQ;
 		} else {
-			CAN1->MCR |= MCR_RXFP | MCR_RFLM | MCR_AWUM;
-			CAN1->MCR &= ~MCR_INRQ;
+			CAN1->MCR |= CAN_MCR_TXFP | CAN_MCR_RFLM | CAN_MCR_AWUM;
+			CAN1->MCR &= ~CAN_MCR_INRQ;
 		}
 	}
 
@@ -284,25 +303,25 @@ void CANController_ControlHandle(void) {
 void CANController_TimingHandle(void) {
 
 	/* Test if CAN1 is in initialization mode */
-	if ((CAN1->MCR & MCR_INRQ) && (CAN1->MSR & MSR_INAK)) {
+	if ((CAN1->MCR & CAN_MCR_INRQ) && (CAN1->MSR & CAN_MSR_INAK)) {
 		/* apply the settings */
-		CANController_Timing->ts &= 0x437F; // this removes any junk, reserved/not used
-		CANController_Timing->brp &= 0x3FF; // this removes any junk, reserved/not used
+		CANController_Timing.ts &= 0x437F; // this removes any junk, reserved/not used
+		CANController_Timing.brp &= 0x3FF; // this removes any junk, reserved/not used
 
-		CAN1->BTR = (CANController_Timing->ts << 16) | CANController_Timing->brp;
+		CAN1->BTR = (CANController_Timing.ts << 16) | CANController_Timing.brp;
 	}
 }
 
 /* TX interrupt */
 void USB_HP_CAN1_TX_IRQHandler(void) {
-	if (CAN1->TSR & TSR_RQCP2) {
-		CAN1->TSR = TSR_RQCP2;
+	if (CAN1->TSR & CAN_TSR_RQCP2) {
+		CAN1->TSR = CAN_TSR_RQCP2;
 	}
-	if (CAN1->TSR & TSR_RQCP1) {
-		CAN1->TSR = TSR_RQCP1;
+	if (CAN1->TSR & CAN_TSR_RQCP1) {
+		CAN1->TSR = CAN_TSR_RQCP1;
 	}
-	if (CAN1->TSR & TSR_RQCP0) {
-		CAN1->TSR = TSR_RQCP0;
+	if (CAN1->TSR & CAN_TSR_RQCP0) {
+		CAN1->TSR = CAN_TSR_RQCP0;
 	}
 
 	/* notify host that message was sent ! */
@@ -312,14 +331,14 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 
 /* RX0 fifo interrupt */
 void USB_LP_CAN1_RX0_IRQHandler(void) {
-	//while (CANx->RF0R&(uint32_t)0x03) {
+	//while (CAN1->RF0R&(uint32_t)0x03) {
 		CANController_Rx0Receive();
 	//}
 }
 
 /* RX1 fifo interrupt */
 void CAN1_RX1_IRQHandler(void) {
-	//while (CANx->RF0R&(uint32_t)0x03) {
+	//while (CAN1->RF0R&(uint32_t)0x03) {
 		CANController_Rx1Receive();
 	//}
 }
@@ -327,12 +346,12 @@ void CAN1_RX1_IRQHandler(void) {
 /* status change and error */
 void CAN1_SCE_IRQHandler(void) {
 
-	if (CAN1->ESR & (ESR_EWGF | ESR_EPVF | ESR_BOFF)) {
+	if (CAN1->ESR & (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF)) {
 		/* if error happened, copy the state */
 		CANController_Error =	CAN1->ESR;
 
 		/* clean flag */
-		CANx->ESR &= ~ (ESR_EWGF | ESR_EPVF | ESR_BOFF);
+		CAN1->ESR &= ~ (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF);
 
 		/* notify host */
 		SYS_ChangeIntFlag(SYS_INT_CANERRIF);

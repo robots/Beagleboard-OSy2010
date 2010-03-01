@@ -4,6 +4,9 @@
 #include "semphr.h"
 
 #include "stm32f10x.h"
+#include "sys.h"
+#include "cancontroller.h"
+#include "power.h"
 
 #include "platform.h"
 
@@ -93,7 +96,7 @@ int main(void)
 	SYS_Init();
 	PWR_Init();
 	CANController_Init();
-	SPI_Slave_Init();
+	SPI1_Slave_Init();
 
 	vTaskStartScheduler();
 

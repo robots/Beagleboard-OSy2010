@@ -122,9 +122,13 @@ NVIC value of 255. */
 /* The run time stats time base just uses the existing high frequency timer
 test clock.  All these macros do is clear and return the high frequency
 interrupt count respectively. */
+/*
 extern unsigned long ulRunTimeStatsClock;
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() ulRunTimeStatsClock = 0
 #define portGET_RUN_TIME_COUNTER_VALUE() ulRunTimeStatsClock
+*/
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()
+#define portGET_RUN_TIME_COUNTER_VALUE()
 
 
 #endif /* FREERTOS_CONFIG_H */

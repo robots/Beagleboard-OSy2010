@@ -13,11 +13,13 @@
 
 extern uint16_t SYS_InterruptEnable;
 extern uint16_t SYS_InterruptFlag;
-extern uint16_t SYS_ID;
+extern uint16_t SYS_Identifier;
 extern uint16_t SYS_Reset;
 
+void SYS_Init();
 void SYS_ChangeIntFlag(uint16_t);
 void SYS_IntFlagWriteHandle(void);
+void SYS_ResetHandler(void);
 
 #endif
 

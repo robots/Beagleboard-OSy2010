@@ -1,3 +1,12 @@
+#include "FreeRTOS.h"
+/*#include "task.h"
+#include "queue.h"
+#include "semphr.h"
+*/
+#include "platform.h"
+#include "stm32f10x.h"
+
+#include "sys.h"
 
 #include "power.h"
 
@@ -6,7 +15,7 @@ struct pwr_i_set_t PWR_I_Set = {0, 0};
 
 uint16_t PWR_Control = 0x0000;
 uint16_t PWR_Control_Last = 0x0000;
-uint16_t PWR_Status;
+uint16_t PWR_Status = 0x0000;
 
 void PWR_Init() {
 	ADC_InitTypeDef ADC_InitStructure;
@@ -73,7 +82,7 @@ void PWR_Init() {
 
 	/* setup EXTI trigger mode */
 	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Both;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
 	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
 	
 	EXTI_InitStructure.EXTI_Line = EXTI_Line2;
@@ -110,8 +119,9 @@ void PWR_Init() {
 	/* setup TIM3 to generate PWM  on PB[01] */
 	TIM_DeInit(TIM3);
 	TIM_TimeBaseStructInit( &TIM_TimeBaseStructure );
-  TIM_TimeBaseInitStruct.TIM_Period = 0x3FFF; // 36MHz / 16368 = ~2.5KHz   
-	TIM_ARRPreloadConfig(TIM3, Enable);
+  TIM_TimeBaseStructure.TIM_Period = 0x3FFF; // 36MHz / 16368 = ~2.5KHz   
+	TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
+	TIM_ARRPreloadConfig(TIM3, ENABLE);
 
 	TIM_OCInitStruct.TIM_OutputState = TIM_OutputState_Enable; 
 	TIM_OCInitStruct.TIM_Pulse = 0;

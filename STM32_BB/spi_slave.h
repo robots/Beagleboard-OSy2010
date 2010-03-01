@@ -8,14 +8,13 @@
 #ifndef SPI_H_
 #define SPI_H_
 
-void SPIx_Init(SPI_TypeDef *);
+/* DMA enable bit*/
+#define CCR_ENABLE_Set      ((uint32_t)0x00000001)
 
-void SPIx_Lock(SPI_TypeDef *);
-void SPIx_Unlock(SPI_TypeDef *);
+#define SPI_IT_RXNE         (6)
+#define SPI_IT_TXE          (7)
 
-void SPIx_TranscieveBuffer(SPI_TypeDef *SPI, SPI_InitTypeDef *SPIConf, void *inBuf, uint16_t inSize, void *outBuff, uint16_t outSize);
-
-uint8_t SPIx_TransmitByte(SPI_TypeDef *SPI, SPI_InitTypeDef *SPIConf, uint8_t data);
+void SPI1_Slave_Init();
 
 #endif
 

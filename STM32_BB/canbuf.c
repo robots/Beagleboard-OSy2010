@@ -1,11 +1,11 @@
-/*#include "FreeRTOS.h"
-#include "task.h"
+#include "FreeRTOS.h"
+/*#include "task.h"
 #include "queue.h"
 #include "semphr.h"
-
+*/
 #include "platform.h"
 #include "stm32f10x.h"
-*/
+
 
 #include "canbuf.h"
 
@@ -31,7 +31,7 @@ uint16_t CANBuf_GetAvailable(struct can_buffer_t *b) {
 }
 
 struct can_message_t *CANBuf_GetReadAddr(struct can_buffer_t *b) {
-	return &b->msgs[read];
+	return &b->msgs[b->read];
 }
 
 /* this should be called after message is read */
@@ -43,7 +43,7 @@ void CANBuf_ReadDone(struct can_buffer_t *b) {
 }
 
 struct can_message_t *CANBuf_GetNextWriteAddr(struct can_buffer_t *b) {
-	return &b->msgs[write];
+	return &b->msgs[b->write];
 }
 
 void CANBuf_Written(struct can_buffer_t *b) {

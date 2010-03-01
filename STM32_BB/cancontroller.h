@@ -48,13 +48,14 @@ struct can_message_t {
 	uint8_t data[8];
 } __attribute__ ((packed));
 
+void CANController_Init(void);
 void CANController_Rx1Handle(void);
 void CANController_Rx0Handle(void);
 void CANController_TxHandle(void);
 void CANController_ControlHandle(void);
 void CANController_TimingHandle(void);
 
-extern uint16_t CANController_Error; 
+extern uint32_t CANController_Error; 
 extern uint16_t CANController_Status; 
 extern uint16_t CANController_Control; 
 

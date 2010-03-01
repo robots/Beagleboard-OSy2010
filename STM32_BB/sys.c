@@ -10,9 +10,14 @@
 
 uint16_t SYS_InterruptEnable = 0x0000;
 uint16_t SYS_InterruptFlag = 0x0000;
-uint16_t SYS_ID = 0xCAFE;
+uint16_t SYS_Identifier = 0xCAFE;
 uint16_t SYS_Reset = 0x0000;
 
+void SYS_Init() {
+	SYS_InterruptEnable = 0x0000;
+	SYS_InterruptFlag = 0x0000;
+	SPI_INT_WRITE(Bit_SET);
+}
 
 void SYS_ChangeIntFlag(uint16_t in) {
 	SYS_InterruptFlag |= in;
@@ -22,7 +27,7 @@ void SYS_ChangeIntFlag(uint16_t in) {
 }
 
 void SYS_IntFlagWriteHandle(void) {
-	if (SYS_InterruptFlag & SYS_InterruptEnable == 0x0000) {
+	if ((SYS_InterruptFlag & SYS_InterruptEnable) == 0x0000) {
 		SPI_INT_WRITE(Bit_SET);
 	}
 }

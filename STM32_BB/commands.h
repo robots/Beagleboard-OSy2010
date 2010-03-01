@@ -2,7 +2,7 @@
 #define COMMANDS_H_
 
 /* REG numbers 0x00-0x7f */
-
+#define CMD_WRITE  0x80
 /* global regs */
 #define SYS_INTE   0x01 /* RW */
 #define SYS_INTF   0x02 /* RO */

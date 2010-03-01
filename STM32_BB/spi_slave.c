@@ -12,12 +12,16 @@
 #include "platform.h"
 #include "stm32f10x.h"
 
-#include "commands.h"
+#include "cancontroller.h"
+#include "power.h"
+#include "sys.h"
 
+#include "commands.h"
 #include "spi_slave.h"
 
-typedef (void)(*func)(void) DMA_Callback_t;
+typedef void (*DMA_Callback_t)();
 
+/* number of pending handlers to be executed */
 #define DMA_QUEUE_SIZE      (5)
 /* needs to be highest priority */
 #define DMA_WORKER_PRIORITY (1)
@@ -50,7 +54,7 @@ void SPI1_Slave_Init() {
 	NVIC_InitTypeDef NVIC_InitStructure;
 	DMA_InitTypeDef DMA_InitStructure;
 	
-	xInputQueue = xQueueCreate(DMA_QUEUE_SIZE, sizeof(DMA_Callback_t));
+	xDMAQueue = xQueueCreate(DMA_QUEUE_SIZE, sizeof(DMA_Callback_t));
 	xTaskCreate( taskDMAWorker, ( signed char * ) "DMAWork", configMINIMAL_STACK_SIZE, NULL, DMA_WORKER_PRIORITY, NULL );
 	
 	// SPI module enable
@@ -74,7 +78,7 @@ void SPI1_Slave_Init() {
 	SPIConf.SPI_CRCPolynomial = 7;
 
 
-	SPI_Init(SPI1, SPIConf);
+	SPI_Init(SPI1, &SPIConf);
 	SPI_Cmd(SPI1, ENABLE);
 	
 	SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
@@ -105,7 +109,7 @@ void SPI1_Slave_Init() {
 
 	/* enable RX DMA */
 	DMA1_Channel2->CMAR = (uint32_t)SPI1_Cmd;
-	DMA1_Channel2->CNDTR = outSize;
+	DMA1_Channel2->CNDTR = sizeof(SPI1_Cmd);
 
 	DMA_Cmd(DMA1_Channel2, ENABLE);
 
@@ -127,10 +131,11 @@ void SPI1_Slave_Init() {
 }
 
 static void taskDMAWorker( void *pvParameters ) {
+	(void)pvParameters; // silent :)
 	DMA_Callback_t tmpCallback;
 
 	while (1) {
-		xQueueReceive( xDMAQueue, &tmpCallback, maxPORT_DELAY);
+		xQueueReceive( xDMAQueue, &tmpCallback, portMAX_DELAY);
 		if (tmpCallback != NULL) {
 			tmpCallback();
 		}
@@ -139,9 +144,9 @@ static void taskDMAWorker( void *pvParameters ) {
 
 void SPI1_IRQHandler(void) {
 	// clear the interrupt pending flag
-	SPI1->SR = (uint16_t)~((1 << SPI_I2S_IT_RXNE)|(1 << SPI_I2S_IT_TXE));
+	SPI1->SR = (uint16_t)~((1 << SPI_IT_RXNE) | (1 << SPI_IT_TXE));
 	/* disable interrupt */
-	SPI1->CR2 &= (uint16_t)~((1 << SPI_I2S_IT_RXNE)|(1 << SPI_I2S_IT_TXE));
+	SPI1->CR2 &= (uint16_t)~((1 << SPI_IT_RXNE) | (1 << SPI_IT_TXE));
 
 	if (SPI1_Cmd & CMD_WRITE) {
 		/* enable RX DMA */
@@ -157,7 +162,7 @@ void DMA1_Channel2_IRQHandler(void) {
 	static portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
 
 	/* disable DMA */
-	DMA1_Channel2->CCR &= CCR_ENABLE_Reset;
+	DMA1_Channel2->CCR &= ~CCR_ENABLE_Set;
 	/* clear int pending bit */
 	DMA1->IFCR = DMA1_IT_GL2;
 
@@ -168,13 +173,13 @@ void DMA1_Channel2_IRQHandler(void) {
 		DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
 		DMA1_Channel2->CNDTR = 1;
 		DMA1_Channel3->CCR |= CCR_ENABLE_Set;
-		portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
+		portEND_SWITCHING_ISR( pxHigherPriorityTaskWoken );
 	} else {
 		SPI1_DMA_Type = SPI1_DATA; // return to command mode
 		
 		/* we have time to setup another trancation */
 		if (SPI1_Cmd & CMD_WRITE) { /* WRITE */
-			SPI1->CR2 |= (uint16_t)(1 << SPI_I2S_IT_RXNE);
+			SPI1->CR2 |= (uint16_t)((uint16_t)1 << SPI_IT_RXNE);
 			switch (SPI1_Cmd & 0x7F) {
 				case SYS_INTE:
 					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptEnable;
@@ -202,8 +207,8 @@ void DMA1_Channel2_IRQHandler(void) {
 					break;
 				case CAN_TX:
 					DMA_Callback = CANController_TxHandle;
-					DMA1_Channel2->CMAR = (uint32_t)CANController_Tx;
-					DMA1_Channel2->CNDTR = sizeof(struct CANController_CANMessage_t);
+					DMA1_Channel2->CMAR = (uint32_t)CANController_TX;
+					DMA1_Channel2->CNDTR = sizeof(struct can_message_t);
 					break;
 				case PWR_CTRL:
 					DMA_Callback = PWR_ControlHandle;
@@ -221,7 +226,7 @@ void DMA1_Channel2_IRQHandler(void) {
 					break;
 			}
 		} else { /* READ */
-			SPI1->CR2 |= (uint16_t)(1 << SPI_I2S_IT_TXE);
+			SPI1->CR2 |= (uint16_t)(1 << SPI_IT_TXE);
 			DMA_Callback = NULL;
 			switch (SPI1_Cmd) {
 				case SYS_INTE:
@@ -233,10 +238,10 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);
 					break;
 				case SYS_ID:
-					DMA1_Channel3->CMAR = (uint32_t)&SYS_ID;
-					DMA1_Channel3->CNDTR = sizeof(SYS_ID);
+					DMA1_Channel3->CMAR = (uint32_t)&SYS_Identifier;
+					DMA1_Channel3->CNDTR = sizeof(SYS_Identifier);
 					break;
-				case CAN_STATUS:
+				case CAN_ERR:
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_Error;
 					DMA1_Channel3->CNDTR = sizeof(CANController_Error);
 					break;
@@ -292,7 +297,7 @@ void DMA1_Channel3_IRQHandler(void) {
 	static portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
 
 	/* disable DMA Channel */
-	DMA1_Channel3->CCR &= CCR_ENABLE_Reset;
+	DMA1_Channel3->CCR &= ~CCR_ENABLE_Set;
 	/* clear int pending bit */
 	DMA1->IFCR = DMA1_IT_GL3;
 
@@ -308,6 +313,6 @@ void DMA1_Channel3_IRQHandler(void) {
 	DMA1_Channel2->CNDTR = 1;
 	DMA1_Channel2->CCR |= CCR_ENABLE_Set;
 
-	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
+	portEND_SWITCHING_ISR( pxHigherPriorityTaskWoken );
 }
 
