@@ -6,6 +6,9 @@
 #define SYS_INT_CANRX1IF 0x0004
 #define SYS_INT_CANERRIF 0x0008
 
+#define SYS_INT_PWRALARM 0x0100
+#define SYS_INT_PWRAC    0x0200
+
 #define SYS_RESET_MAGIC  0xBABE
 
 extern uint16_t SYS_InterruptEnable;

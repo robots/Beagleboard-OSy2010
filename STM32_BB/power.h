@@ -3,8 +3,11 @@
 
 #define PWR_CTRL_ADC 0x0001
 #define PWR_CTRL_PWM 0x0002
-#define PWR_CTRL_EN  0x0004 // charger enable 
+#define PWR_CTRL_EN  0x0004 // charger enable
 #define PWR_CTRL_ACS 0x0008 // ac select
+
+#define PWR_STAT_ALARM 0x0001
+#define PWR_STAT_ACPRE 0x0002
 
 struct pwr_data_t {
 	uint16_t i_bat;
