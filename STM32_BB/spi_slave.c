@@ -48,19 +48,19 @@ static void taskDMAWorker( void *pvParameters );
 
 
 void SPI1_Slave_Init() {
-	
+
 	SPI_InitTypeDef  SPIConf;
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 	DMA_InitTypeDef DMA_InitStructure;
-	
+
 	xDMAQueue = xQueueCreate(DMA_QUEUE_SIZE, sizeof(DMA_Callback_t));
 	xTaskCreate( taskDMAWorker, ( signed char * ) "DMAWork", configMINIMAL_STACK_SIZE, NULL, DMA_WORKER_PRIORITY, NULL );
-	
+
 	// SPI module enable
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
-	
+
 	// Configure SPI1 pins: NSS, SCK, MISO and MOSI
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_7;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
@@ -80,7 +80,7 @@ void SPI1_Slave_Init() {
 
 	SPI_Init(SPI1, &SPIConf);
 	SPI_Cmd(SPI1, ENABLE);
-	
+
 	SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
 	SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Tx, ENABLE);
 
@@ -105,7 +105,7 @@ void SPI1_Slave_Init() {
 
 	DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 	DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
-	
+
 
 	/* enable RX DMA */
 	DMA1_Channel2->CMAR = (uint32_t)SPI1_Cmd;
@@ -119,12 +119,12 @@ void SPI1_Slave_Init() {
 
 	NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel2_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
-	
+
 	NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel3_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
-	
+
 	/* spi1 isr does not rely on freertos api - can have higher priority */
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY - 1;
 	NVIC_InitStructure.NVIC_IRQChannel = SPI1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
@@ -176,7 +176,7 @@ void DMA1_Channel2_IRQHandler(void) {
 		portEND_SWITCHING_ISR( pxHigherPriorityTaskWoken );
 	} else {
 		SPI1_DMA_Type = SPI1_DATA; // return to command mode
-		
+
 		/* we have time to setup another trancation */
 		if (SPI1_Cmd & CMD_WRITE) { /* WRITE */
 			SPI1->CR2 |= (uint16_t)((uint16_t)1 << SPI_IT_RXNE);
