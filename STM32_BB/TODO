@@ -1,16 +1,13 @@
 
-compile !
-lot of testing !!
-LED outputs
 
 * CAN controller:
-done ?
+filters ?
 
 * Power:
-done ? 
+OK
 
 * SYS:
-done ?
+test external int
 
 * SPI_Slave:
-done ?
+test
