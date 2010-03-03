@@ -4,6 +4,7 @@
 #include "semphr.h"
 
 #include "stm32f10x.h"
+#include "spi_slave.h"
 #include "sys.h"
 #include "cancontroller.h"
 #include "power.h"
@@ -33,8 +34,9 @@ void RCC_Configuration(void)
 
 	/* Enable GPIO for led */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
 
-	// CK_RTC clock selection
+//	RCC_MCOConfig(RCC_MCO_PLLCLK_Div2);
 }
 
 void GPIO_Configuration(void)
@@ -44,32 +46,23 @@ void GPIO_Configuration(void)
 	/* disable JTAG !!! */
 //	GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
 
-	/* set LED, SPI int as Open-drain */
+	/* set PA[0-4] as analog inputs */
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	/* set LED, SPI int as Open-drain */
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8 | GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15;
+	/* set LED Open-drain */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-
-	/*TODO:  should this be moved to power.c ? */
-	/* PB6 - ACSEL, PB7 - ENABLE */
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
+	
+	/* SPI Int as OD output */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-	/* PB2 - ACPRES, PB5 - ALARM */
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_5;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-	GPIO_Init(GPIOB, &GPIO_InitStructure);
-
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	/* pins to HiZ state */
 	LED_YELLOW(Bit_SET);
@@ -77,8 +70,6 @@ void GPIO_Configuration(void)
 	LED_RED(Bit_SET);
 	SPI_INT_WRITE(Bit_SET);
 
-	PWR_ENABLE(Bit_RESET);
-	PWR_ACSEL(Bit_RESET);
 
 }
 
@@ -89,6 +80,7 @@ int main(void)
 
 	/* NVIC configuration */
 	NVIC_Configuration();
+	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
 	/* Configure the GPIO ports */
 	GPIO_Configuration();
@@ -99,6 +91,11 @@ int main(void)
 	SPI1_Slave_Init();
 
 	vTaskStartScheduler();
+}
+
+void vApplicationStackOverflowHook( xTaskHandle *pxTask, signed char *pcTaskName ) {
+	(void)pxTask;
+	(void)pcTaskName;
 
 	while (1);
 }

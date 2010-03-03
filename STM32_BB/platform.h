@@ -22,7 +22,7 @@
 #define PWR_ALARM_PIN      GPIO_Pin_5
 #define PWR_ALARM_GPIO     GPIOB
 
-#define PWR_ACPRES_PIN     GPIO_Pin_5
+#define PWR_ACPRES_PIN     GPIO_Pin_2
 #define PWR_ACPRES_GPIO    GPIOB
 
 #define LED_YELLOW(x)      GPIO_WriteBit(LED_YELLOW_GPIO, LED_YELLOW_PIN, x)
