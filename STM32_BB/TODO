@@ -2,12 +2,13 @@
 
 * CAN controller:
 filters ?
+OK ?
 
 * Power:
 OK
 
 * SYS:
-test external int
+OK
 
 * SPI_Slave:
 test

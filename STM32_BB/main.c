@@ -57,20 +57,11 @@ void GPIO_Configuration(void)
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
-	
-	/* SPI Int as OD output */
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	/* pins to HiZ state */
 	LED_YELLOW(Bit_SET);
 	LED_GREEN(Bit_SET);
 	LED_RED(Bit_SET);
-	SPI_INT_WRITE(Bit_SET);
-
-
 }
 
 int main(void)
