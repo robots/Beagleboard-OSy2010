@@ -1,6 +1,6 @@
 
 
-file FLASH_RUN/stm32_blink_rtc.elf
+file FLASH_RUN/stm32_bb.elf
 
 target remote localhost:3333
 

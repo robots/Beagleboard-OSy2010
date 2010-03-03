@@ -69,6 +69,12 @@ extern unsigned long _estack;
 
 /* Private variables ---------------------------------------------------------*/
 
+/* FreeRTOS hooks */
+void vPortSVCHandler(void);
+void xPortPendSVHandler(void);
+void xPortSysTickHandler(void);
+
+
 /* Private function prototypes -----------------------------------------------*/
 void Reset_Handler(void) __attribute__((__interrupt__));
 extern int main(void);
@@ -177,11 +183,11 @@ void (* const g_pfnVectors[])(void) =
     0,                          /* Reserved */
     0,                          /* Reserved */
     0,                          /* Reserved */
-    SVC_Handler,                /* SVCall Handler */
+    vPortSVCHandler,            /* SVCall Handler - RTOS HOOK */
     DebugMon_Handler,           /* Debug Monitor Handler */
     0,                          /* Reserved */
-    PendSV_Handler,             /* PendSV Handler */
-    SysTick_Handler,            /* SysTick Handler */
+    xPortPendSVHandler,         /* PendSV Handler - RTOS HOOK */
+    xPortSysTickHandler,        /* SysTick Handler - RTOS HOOK */
 
     /* External Interrupts */
     WWDG_IRQHandler,            /* Window Watchdog */
