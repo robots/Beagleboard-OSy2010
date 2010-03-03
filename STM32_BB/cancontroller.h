@@ -7,9 +7,12 @@
 #define CAN_CTRL_OSM   0x0004 /* enable One Shot Mode */
 #define CAN_CTRL_SILM  0x0008 /* Listen only - silent mode */
 #define CAN_CTRL_RST   0x0010 /* bxCan master reset */
+#define CAN_CTRL_ABOM  0x0020 /* Automatic Bus-Off Management*/
 
 /* status bit fields */
 #define CAN_STAT_TXF   0x0001 /* TX fifo Full */
+#define CAN_STAT_ALST  0x0004 /* Arbitration lost for last message */
+#define CAN_STAT_TERR  0x0008 /* Transmit error for last message */
 #define CAN_STAT_RX0   0x0F00 /* no of messages queued in RX0 */
 #define CAN_STAT_RX1   0xF000 /* no of messages queued in RX1 */
 
