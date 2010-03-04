@@ -289,6 +289,12 @@ static struct twl4030_platform_data beagle_twldata = {
 	.vpll2		= &beagle_vpll2,
 };
 
+static struct i2c_board_info __initdata beagle_i2c_rtc[] = {
+	{
+		I2C_BOARD_INFO("pcf8653", 0x51),
+	},
+};
+
 static struct i2c_board_info __initdata beagle_i2c_boardinfo[] = {
 	{
 		I2C_BOARD_INFO("twl4030", 0x48),
@@ -302,6 +308,8 @@ static int __init omap3_beagle_i2c_init(void)
 {
 	omap_register_i2c_bus(1, 2600, beagle_i2c_boardinfo,
 			ARRAY_SIZE(beagle_i2c_boardinfo));
+	omap_register_i2c_bus(2, 100, beagle_i2c_rtc,
+			ARRAY_SIZE(beagle_i2c_rtc));
 	/* Bus 3 is attached to the DVI port where devices like the pico DLP
 	 * projector don't work reliably with 400kHz */
 	omap_register_i2c_bus(3, 100, NULL, 0);
