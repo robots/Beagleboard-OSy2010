@@ -46,6 +46,8 @@
 #include <mach/mux.h>
 #include <mach/display.h>
 
+#include <linux/spi/spi.h>
+
 #include "twl4030-generic-scripts.h"
 #include "mmc-twl4030.h"
 
@@ -316,6 +318,23 @@ static int __init omap3_beagle_i2c_init(void)
 	return 0;
 }
 
+/* SPI */
+static struct spi_board_info beagle_spi_board_info[] = {
+	{
+		.modalias	= "spidev",
+		.chip_select	= 0,
+		.max_speed_hz	= 1*1000*1000,
+		.bus_num	= 3,
+	},
+	{
+		.modalias	= "spidev",
+		.chip_select	= 0,
+		.max_speed_hz	= 1*1000*1000,
+		.bus_num	= 4,
+	},
+};
+
+
 static void __init omap3_beagle_init_irq(void)
 {
 	omap2_init_common_hw(mt46h32m32lf6_sdrc_params);
@@ -525,6 +544,18 @@ static void __init omap3_beagle_init(void)
 	usb_ehci_init();
 	omap3beagle_flash_init();
 	beagle_display_init();
+	
+	/* TODO: these have to be moved to device specific init
+	 * once the drivers are ready
+	 */
+	gpio_request(141, "enc424j600_irq");
+	gpio_direction_input(157);
+
+	gpio_request(157, "stm32_bb_irq");
+	gpio_direction_input(157);
+	
+	spi_register_board_info(beagle_spi_board_info, 
+				ARRAY_SIZE(beagle_spi_board_info));
 }
 
 static void __init omap3_beagle_map_io(void)
