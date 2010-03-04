@@ -35,13 +35,33 @@ static int __uvc_query_ctrl(struct uvc_device *dev, __u8 query, __u8 unit,
 {
 	__u8 type = USB_TYPE_CLASS | USB_RECIP_INTERFACE;
 	unsigned int pipe;
+	int delayed = 0;
+	int ret = 0;
 
 	pipe = (query & 0x80) ? usb_rcvctrlpipe(dev->udev, 0)
 			      : usb_sndctrlpipe(dev->udev, 0);
 	type |= (query & 0x80) ? USB_DIR_IN : USB_DIR_OUT;
 
-	return usb_control_msg(dev->udev, pipe, query, type, cs << 8,
+	if (dev->last_urb) {
+		while (time_before(jiffies,dev->last_urb + 2)) {
+			schedule();
+			delayed = 1;
+		}
+	}
+	
+	ret = usb_control_msg(dev->udev, pipe, query, type, cs << 8,
 			unit << 8 | intfnum, data, size, timeout);
+	
+	dev->last_urb = jiffies;
+
+#ifdef UVC_RESET_ON_TIMEOUT
+	if (ret != size) {
+		if (ret == -ETIMEDOUT) // reset the device in case of -110 error
+			dev->state |= UVC_DEV_IOERROR;
+		return -EIO;
+	}
+#endif
+	return ret;
 }
 
 int uvc_query_ctrl(struct uvc_device *dev, __u8 query, __u8 unit,
@@ -169,7 +189,7 @@ out:
 	return ret;
 }
 
-static int uvc_set_video_ctrl(struct uvc_video_device *video,
+int uvc_set_video_ctrl(struct uvc_video_device *video,
 	struct uvc_streaming_control *ctrl, int probe)
 {
 	__u8 *data;
@@ -671,9 +691,14 @@ static void uvc_video_complete(struct urb *urb)
 	video->decode(urb, video, buf);
 
 	if ((ret = usb_submit_urb(urb, GFP_ATOMIC)) < 0) {
-		uvc_printk(KERN_ERR, "Failed to resubmit video URB (%d).\n",
-			ret);
+		if (ret == -EL2NSYNC) {
+			if ((ret = usb_submit_urb(urb, GFP_ATOMIC)) < 0) {
+				uvc_printk(KERN_ERR, "Failed to resubmit video URB (%d).\n",
+					ret);
+			}
+		}
 	}
+	video->dev->last_urb = jiffies;
 }
 
 /*
@@ -933,6 +958,8 @@ static int uvc_init_video(struct uvc_video_device *video, gfp_t gfp_flags)
 			return ret;
 		}
 	}
+
+	video->dev->last_urb = jiffies;
 
 	return 0;
 }

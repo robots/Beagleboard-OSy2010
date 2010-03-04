@@ -311,6 +311,23 @@ static struct uvc_control_info uvc_ctrls[] = {
 		.flags		= UVC_CONTROL_SET_CUR | UVC_CONTROL_GET_CUR
 				| UVC_CONTROL_RESTORE | UVC_CONTROL_AUTO_UPDATE,
 	},
+	{
+		.entity		= UVC_GUID_LOGITECH_MOTOR,
+		.selector	= LXU_MOTOR_PANTILT_RELATIVE_CONTROL,
+		.index		= 0,
+		.size		= 4,
+		.flags		= UVC_CONTROL_SET_CUR | UVC_CONTROL_GET_MIN
+				| UVC_CONTROL_GET_MAX | UVC_CONTROL_GET_DEF,
+	},
+	{
+		.entity		= UVC_GUID_LOGITECH_MOTOR,
+		.selector	= LXU_MOTOR_PANTILT_RESET_CONTROL,
+		.index		=	1,
+		.size		= 1,
+		.flags		= UVC_CONTROL_SET_CUR | UVC_CONTROL_GET_MIN
+				| UVC_CONTROL_GET_MAX | UVC_CONTROL_GET_RES
+				| UVC_CONTROL_GET_DEF,
+	},
 };
 
 static struct uvc_menu_info power_line_frequency_controls[] = {
@@ -587,6 +604,46 @@ static struct uvc_control_mapping uvc_ctrl_mappings[] = {
 		.offset		= 0,
 		.v4l2_type	= V4L2_CTRL_TYPE_BOOLEAN,
 		.data_type	= UVC_CTRL_DATA_TYPE_BOOLEAN,
+	},
+	{
+		.id		= V4L2_CID_PAN_RELATIVE,
+		.name		= "Pan (relative)",
+		.entity		= UVC_GUID_LOGITECH_MOTOR,
+		.selector	= LXU_MOTOR_PANTILT_RELATIVE_CONTROL,
+		.size		= 16,
+		.offset		= 0,
+		.v4l2_type	= V4L2_CTRL_TYPE_INTEGER,
+		.data_type	= UVC_CTRL_DATA_TYPE_SIGNED,
+	},
+	{
+		.id		= V4L2_CID_TILT_RELATIVE,
+		.name		= "Tilt (relative)",
+		.entity		= UVC_GUID_LOGITECH_MOTOR,
+		.selector	= LXU_MOTOR_PANTILT_RELATIVE_CONTROL,
+		.size		= 16,
+		.offset		= 16,
+		.v4l2_type	= V4L2_CTRL_TYPE_INTEGER,
+		.data_type	= UVC_CTRL_DATA_TYPE_SIGNED,
+	},
+	{ 
+		.id		= V4L2_CID_TILT_RESET,
+		.name		= "Tilt (reset)",
+		.entity		= UVC_GUID_LOGITECH_MOTOR,
+		.selector	= LXU_MOTOR_PANTILT_RESET_CONTROL,
+		.size		= 2,
+		.offset		= 0,
+		.v4l2_type	= V4L2_CTRL_TYPE_INTEGER,
+		.data_type	= UVC_CTRL_DATA_TYPE_ENUM,
+	},
+	{
+		.id		= V4L2_CID_PAN_RESET,
+		.name		= "Pan (reset)",
+		.entity		= UVC_GUID_LOGITECH_MOTOR,
+		.selector	= LXU_MOTOR_PANTILT_RESET_CONTROL,
+		.size		= 2,
+		.offset		= 0,
+		.v4l2_type	= V4L2_CTRL_TYPE_INTEGER, 
+		.data_type	= UVC_CTRL_DATA_TYPE_ENUM, 
 	},
 };
 

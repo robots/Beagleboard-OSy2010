@@ -162,9 +162,14 @@ static void uvc_status_complete(struct urb *urb)
 	/* Resubmit the URB. */
 	urb->interval = dev->int_ep->desc.bInterval;
 	if ((ret = usb_submit_urb(urb, GFP_ATOMIC)) < 0) {
-		uvc_printk(KERN_ERR, "Failed to resubmit status URB (%d).\n",
-			ret);
+		if (ret == -EL2NSYNC) {
+			if ((ret = usb_submit_urb(urb, GFP_ATOMIC)) < 0) {
+				uvc_printk(KERN_ERR, "Failed to resubmit status URB (%d).\n",
+					ret);
+			}
+		}
 	}
+	dev->last_urb = jiffies;
 }
 
 int uvc_status_init(struct uvc_device *dev)
@@ -172,6 +177,7 @@ int uvc_status_init(struct uvc_device *dev)
 	struct usb_host_endpoint *ep = dev->int_ep;
 	unsigned int pipe;
 	int interval;
+	int ret=0;
 
 	if (ep == NULL)
 		return 0;
@@ -202,7 +208,17 @@ int uvc_status_init(struct uvc_device *dev)
 		dev->status, UVC_MAX_STATUS_SIZE, uvc_status_complete,
 		dev, interval);
 
-	return usb_submit_urb(dev->int_urb, GFP_KERNEL);
+
+	if ((ret = usb_submit_urb(dev->int_urb, GFP_ATOMIC)) < 0) {
+		if (ret == -EL2NSYNC) {
+			if ((ret = usb_submit_urb(dev->int_urb, GFP_ATOMIC)) < 0) {
+				uvc_printk(KERN_ERR, "Failed to resubmit status URB (%d).\n",
+					ret);
+			}
+		}
+	}
+	dev->last_urb = jiffies;
+	return ret;
 }
 
 void uvc_status_cleanup(struct uvc_device *dev)
@@ -221,9 +237,20 @@ int uvc_status_suspend(struct uvc_device *dev)
 
 int uvc_status_resume(struct uvc_device *dev)
 {
+	int ret = 0;
 	if (dev->int_urb == NULL)
 		return 0;
 
-	return usb_submit_urb(dev->int_urb, GFP_NOIO);
+	if ((ret = usb_submit_urb(dev->int_urb, GFP_ATOMIC)) < 0) {
+		if (ret == -EL2NSYNC) {
+			if ((ret = usb_submit_urb(dev->int_urb, GFP_ATOMIC)) < 0) {
+				uvc_printk(KERN_ERR, "Failed to resubmit status URB (%d).\n",
+					ret);
+			}
+		}
+	}
+	dev->last_urb = jiffies;
+	return ret;
+
 }
 

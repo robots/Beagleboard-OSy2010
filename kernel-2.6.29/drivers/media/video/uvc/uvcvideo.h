@@ -321,6 +321,9 @@ struct uvc_xu_control {
 #define UVC_FMT_FLAG_COMPRESSED		0x00000001
 #define UVC_FMT_FLAG_STREAM		0x00000002
 
+/* Uncomment this to enable reset-on-timeout*/
+#define UVC_RESET_ON_TIMEOUT
+
 /* ------------------------------------------------------------------------
  * Structures.
  */
@@ -622,6 +625,9 @@ struct uvc_video_device {
 
 enum uvc_device_state {
 	UVC_DEV_DISCONNECTED = 1,
+#ifdef UVC_RESET_ON_TIMEOUT
+	UVC_DEV_IOERROR = 2,
+#endif
 };
 
 struct uvc_device {
@@ -633,6 +639,7 @@ struct uvc_device {
 	char name[32];
 
 	enum uvc_device_state state;
++	unsigned long last_urb;
 	struct kref kref;
 	struct list_head list;
 
@@ -812,6 +819,17 @@ extern uint32_t uvc_fraction_to_interval(uint32_t numerator,
 		uint32_t denominator);
 extern struct usb_host_endpoint *uvc_find_endpoint(
 		struct usb_host_interface *alts, __u8 epaddr);
+
+#ifdef UVC_RESET_ON_TIMEOUT
+
+extern int uvc_video_reinit(struct uvc_video_device *video);
+extern int uvc_usb_reset(struct uvc_device *dev);
+
+extern int uvc_set_video_ctrl(struct uvc_video_device *video,
+        struct uvc_streaming_control *ctrl, int probe);
+
+#endif
+
 
 /* Quirks support */
 void uvc_video_decode_isight(struct urb *urb, struct uvc_video_device *video,

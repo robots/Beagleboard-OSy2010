@@ -462,6 +462,12 @@ static int uvc_v4l2_release(struct file *file)
 		mutex_unlock(&video->queue.mutex);
 	}
 
+#ifdef UVC_RESET_ON_TIMEOUT
+	/* leave usb device in a clean state */
+	if (video->dev->state & UVC_DEV_IOERROR)
+		uvc_video_reinit(video);
+#endif
+
 	/* Release the file handle. */
 	uvc_dismiss_privileges(handle);
 	kfree(handle);
