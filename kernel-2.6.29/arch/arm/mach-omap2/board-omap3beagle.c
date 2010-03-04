@@ -293,7 +293,7 @@ static struct twl4030_platform_data beagle_twldata = {
 
 static struct i2c_board_info __initdata beagle_i2c_rtc[] = {
 	{
-		I2C_BOARD_INFO("pcf8653", 0x51),
+		I2C_BOARD_INFO("pcf8563", 0x51),
 	},
 };
 
