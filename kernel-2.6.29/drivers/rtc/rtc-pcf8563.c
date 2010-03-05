@@ -168,6 +168,21 @@ static int pcf8563_set_datetime(struct i2c_client *client, struct rtc_time *tm)
 		}
 	};
 
+	/* Disabling clock out reduces consumption to ~275 nA 
+	 * MD
+	 */
+	do {
+		unsigned char data[2] = { PCF8563_REG_CLKO, 0x00 };
+
+		err = i2c_master_send(client, data, sizeof(data));
+		if (err != sizeof(data)) {
+			dev_err(&client->dev,
+				"%s: err=%d addr=%02x, data=%02x\n",
+				__func__, err, data[0], data[1]);
+			return -EIO;
+		}
+	} while (0);
+
 	return 0;
 }
 
