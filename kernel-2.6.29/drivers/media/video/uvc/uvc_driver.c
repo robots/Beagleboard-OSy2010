@@ -143,6 +143,51 @@ static __u32 uvc_colorspace(const __u8 primaries)
 	return 0;
 }
 
+#ifdef UVC_RESET_ON_TIMEOUT
+/* 
+ * Reset and Re-Initialize video device
+ */
+int uvc_video_reinit(struct uvc_video_device *video)
+{
+	int ret;
+
+	if ((ret = uvc_usb_reset(video->dev)) < 0)
+		return ret;
+
+	if ((ret = uvc_set_video_ctrl(video, &video->streaming->ctrl, 0)) < 0) {
+		uvc_printk(KERN_DEBUG, "uvc_video_reinit: Unable to commit format "
+			"(%d).\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+
+int uvc_usb_reset(struct uvc_device *dev)
+{
+	int l, ret;
+
+	l = usb_lock_device_for_reset(dev->udev, dev->intf);
+
+	if (l >= 0) {
+		ret = usb_reset_device(dev->udev);
+		if (l)
+			usb_unlock_device(dev->udev);
+	}
+	else
+		ret = -EBUSY;
+	
+	if (ret)
+		uvc_printk(KERN_DEBUG, "uvc_usb_reset: Unable to reset usb device"
+			"(%d).\n", ret);
+	else
+		dev->state &= ~UVC_DEV_IOERROR;
+	
+	return ret;
+}
+#endif
+
 /* Simplify a fraction using a simple continued fraction decomposition. The
  * idea here is to convert fractions such as 333333/10000000 to 1/30 using
  * 32 bit arithmetic only. The algorithm is not perfect and relies upon two
@@ -1508,9 +1553,23 @@ static int uvc_register_video(struct uvc_device *dev)
 	 * parameters.
 	 */
 	if ((ret = uvc_video_init(&dev->video)) < 0) {
+#ifdef UVC_RESET_ON_TIMEOUT
+		uvc_printk(KERN_ERR, "Failed to initialize the device, "
+			"(%d). trying to reset ...\n", ret);
+
+		if ((ret = uvc_usb_reset(dev)))
+			return ret;
+
+		if ((ret = uvc_video_init(&dev->video)) < 0) {
+			uvc_printk(KERN_ERR, "Failed to initialize the device "
+				"(%d).\n", ret);
+			return ret;
+		}
+#else
 		uvc_printk(KERN_ERR, "Failed to initialize the device "
 			"(%d).\n", ret);
 		return ret;
+#endif
 	}
 
 	/* Register the device with V4L. */
@@ -1522,11 +1581,13 @@ static int uvc_register_video(struct uvc_device *dev)
 	 * unregistered before the reference is released, so we don't need to
 	 * get another one.
 	 */
+//	uvc_printk(KERN_ERR, "KOKOOOOS SOM TUUU !! \n");
 	vdev->parent = &dev->intf->dev;
 	vdev->minor = -1;
 	vdev->fops = &uvc_fops;
 	vdev->release = video_device_release;
 	strncpy(vdev->name, dev->name, sizeof vdev->name);
+//	uvc_printk(KERN_ERR, "aj tu sooom  !! %p \n", vdev->parent);
 
 	/* Set the driver data before calling video_register_device, otherwise
 	 * uvc_v4l2_open might race us.
@@ -1534,12 +1595,15 @@ static int uvc_register_video(struct uvc_device *dev)
 	dev->video.vdev = vdev;
 	video_set_drvdata(vdev, &dev->video);
 
+//	uvc_printk(KERN_ERR, "aj tu sooom  2 !! %p \n", vdev->release);
 	if (video_register_device(vdev, VFL_TYPE_GRABBER, -1) < 0) {
 		dev->video.vdev = NULL;
 		video_device_release(vdev);
+		uvc_printk(KERN_ERR, "chybaaa 2 !!\n");
 		return -1;
 	}
 
+	uvc_printk(KERN_ERR, " Camera is ready ;)\n");
 	return 0;
 }
 
@@ -1618,6 +1682,7 @@ static int uvc_probe(struct usb_interface *intf,
 	dev->udev = usb_get_dev(udev);
 	dev->intf = usb_get_intf(intf);
 	dev->intfnum = intf->cur_altsetting->desc.bInterfaceNumber;
+	dev->last_urb = 0;
 	dev->quirks = id->driver_info | uvc_quirks_param;
 
 	if (udev->product != NULL)
