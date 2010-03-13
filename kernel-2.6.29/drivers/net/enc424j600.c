@@ -69,6 +69,8 @@ struct enc424j600_net {
 	u16 tx_retry_count;
 	bool hw_enable;
 	bool full_duplex;
+	bool autoneg;
+	bool speed100;
 	int rxfilter;
 	u32 msg_enable;
 	u8 spi_transfer_buf[SPI_TRANSFER_BUF_LEN];
@@ -243,6 +245,76 @@ static int enc424j600_read_instr(struct enc424j600_net *priv, u8 instr, u8 n)
 }
 
 /*
+ * Select the current register bank if necessary to be able to read @addr.
+ */
+static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
+{
+	u8 b = (addr & BANK_MASK) >> BANK_SHIFT;
+
+	/* These registers are present in all banks, no need to switch bank */
+	if (addr >= EDUASTL && addr <= ECON1H)
+		return;
+	if(priv->bank == b)
+		return;
+
+	enc424j600_write_instr(priv, BXSEL(b), 0);
+
+	priv->bank = b;
+}
+
+/*
+ * Set bits in an 8bit SFR.
+ */
+static void enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
+{
+	enc424j600_set_bank(priv, addr);
+	priv->spi_transfer_buf[0] = mask;
+	enc424j600_write_instr(priv, BFS(addr), 1);
+}
+
+/*
+ * Clear bits in an 8bit SFR.
+ */
+static void enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
+{
+	enc424j600_set_bank(priv, addr);
+	priv->spi_transfer_buf[0] = mask;
+	enc424j600_write_instr(priv, BFC(addr), 1);
+}
+
+/*
+ * Write a 8bit special function register.
+ * The @sfr parameters takes address of the register.
+ * Uses banked write instruction.
+ */
+static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
+{
+	int ret;
+
+	enc424j600_set_bank(priv, sfr);
+
+	priv->spi_transfer_buf[0] = data & 0xFF;
+	ret = enc424j600_write_instr(priv, WCR(sfr & ADDR_MASK), 1);
+
+	return ret;
+}
+/*
+ * Read a 8bit special function register.
+ * The @sfr parameters takes address of the register.
+ * Uses banked read instruction.
+ */
+static int enc424j600_read_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 *data)
+{
+	int ret;
+
+	enc424j600_set_bank(priv, sfr);
+	ret = enc424j600_read_instr(priv, RCR(sfr & ADDR_MASK), 1);
+	*data = priv->spi_transfer_buf[0];
+
+	return ret;
+}
+
+/*
  * Write a 16bit special function register.
  * The @sfr parameters takes address of the low byte of the register.
  * Takes care of the endiannes & buffers.
@@ -266,7 +338,7 @@ static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 dat
  * Takes care of the endiannes & buffers.
  * Uses banked read instruction.
  */
-static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16* data)
+static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
 {
 	int ret;
 
@@ -296,171 +368,21 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 		enc424j600_read_16b_sfr(priv, EDUASTL, &test);
 	} while (test != 0x1234);
 
+	u8 estath;
 	do{
-		enc424j600_read_instr(priv, RCR(ESTATH), 1);
-	} while (!priv->spi_transfer_buf[0] & CLKRDY);
+		enc424j600_read_8b_sfr(priv, ESTATH, estath);
+	} while (!estath & CLKRDY);
 
 	enc424j600_write_instr(priv, SETETHRST, 0);
 
 	udelay(50);
 
-	enc424j600_read_instr(priv, WCR(EUDASTL), 2);
-	assert(priv->spi_transfer_buf[0] == 0x0 && priv->spi_transfer_buf[1] == 0x0);
+	u16 ret;
+	enc424j600_read_16b_sfr(priv, EUDASTL, &ret);
+	if (netif_msg_hw(priv) && ret != 0)
+		printk(KERN_DEBUG DRV_NAME ": %s() EUDASTL is not zero!\n", __func__);
 
 	udelay(500);
-}
-
-/*
- * Select the current register bank if necessary to be able to read @addr.
- */
-static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
-{
-	u8 b = (addr & BANK_MASK) >> BANK_SHIFT;
-
-	/ * These registers are present in all banks, no need
-	to switch bank * /
-	if (addr >= EDUASTL && addr <= ECON1H)
-		return;
-	if(priv->bank == b)
-		return;
-
-	enc424j600_write_instr(priv, BXSEL(b), 0);
-
-	priv->bank = b;
-}
-
-/*
- * Register access routines through the SPI bus.
- * Every register access comes in two flavours:
- * - nolock_xxx: caller needs to invoke mutex_lock, usually to access
- *   atomically more than one register
- * - locked_xxx: caller doesn't need to invoke mutex_lock, single access
- *
- * Some registers can be accessed through the bit field clear and
- * bit field set to avoid a read modify write cycle.
- */
-
-/*
- * Register bit field Set
- */
-static void nolock_reg_bfset(struct enc424j600_net *priv,
-				      u8 addr, u8 mask)
-{
-	enc424j600_set_bank(priv, addr);
-	spi_write_op(priv, ENC28J60_BIT_FIELD_SET, addr, mask);
-}
-
-static void locked_reg_bfset(struct enc424j600_net *priv,
-				      u8 addr, u8 mask)
-{
-	mutex_lock(&priv->lock);
-	nolock_reg_bfset(priv, addr, mask);
-	mutex_unlock(&priv->lock);
-}
-
-/*
- * Register bit field Clear
- */
-static void nolock_reg_bfclr(struct enc424j600_net *priv,
-				      u8 addr, u8 mask)
-{
-	enc424j600_set_bank(priv, addr);
-	spi_write_op(priv, ENC28J60_BIT_FIELD_CLR, addr, mask);
-}
-
-static void locked_reg_bfclr(struct enc424j600_net *priv,
-				      u8 addr, u8 mask)
-{
-	mutex_lock(&priv->lock);
-	nolock_reg_bfclr(priv, addr, mask);
-	mutex_unlock(&priv->lock);
-}
-
-/*
- * Register byte read
- */
-static int nolock_regb_read(struct enc424j600_net *priv,
-				     u8 address)
-{
-	enc424j600_set_bank(priv, address);
-	return spi_read_op(priv, ENC28J60_READ_CTRL_REG, address);
-}
-
-static int locked_regb_read(struct enc424j600_net *priv,
-				     u8 address)
-{
-	int ret;
-
-	mutex_lock(&priv->lock);
-	ret = nolock_regb_read(priv, address);
-	mutex_unlock(&priv->lock);
-
-	return ret;
-}
-
-/*
- * Register word read
- */
-static int nolock_regw_read(struct enc424j600_net *priv,
-				     u8 address)
-{
-	int rl, rh;
-
-	enc424j600_set_bank(priv, address);
-	rl = spi_read_op(priv, ENC28J60_READ_CTRL_REG, address);
-	rh = spi_read_op(priv, ENC28J60_READ_CTRL_REG, address + 1);
-
-	return (rh << 8) | rl;
-}
-
-static int locked_regw_read(struct enc424j600_net *priv,
-				     u8 address)
-{
-	int ret;
-
-	mutex_lock(&priv->lock);
-	ret = nolock_regw_read(priv, address);
-	mutex_unlock(&priv->lock);
-
-	return ret;
-}
-
-/*
- * Register byte write
- */
-static void nolock_regb_write(struct enc424j600_net *priv,
-				       u8 address, u8 data)
-{
-	enc424j600_set_bank(priv, address);
-	spi_write_op(priv, ENC28J60_WRITE_CTRL_REG, address, data);
-}
-
-static void locked_regb_write(struct enc424j600_net *priv,
-				       u8 address, u8 data)
-{
-	mutex_lock(&priv->lock);
-	nolock_regb_write(priv, address, data);
-	mutex_unlock(&priv->lock);
-}
-
-/*
- * Register word write
- */
-static void nolock_regw_write(struct enc424j600_net *priv,
-				       u8 address, u16 data)
-{
-	enc424j600_set_bank(priv, address);
-	spi_write_op(priv, ENC28J60_WRITE_CTRL_REG, address, (u8) data);
-	spi_write_op(priv, ENC28J60_WRITE_CTRL_REG, address + 1,
-		     (u8) (data >> 8));
-}
-
-static void locked_regw_write(struct enc424j600_net *priv,
-				       u8 address, u16 data)
-{
-	mutex_lock(&priv->lock);
-	nolock_regw_write(priv, address, data);
-	mutex_unlock(&priv->lock);
 }
 
 /*
@@ -523,12 +445,16 @@ enc424j600_packet_write(struct enc424j600_net *priv, int len, const u8 *data)
 
 static unsigned long msec20_to_jiffies;
 
-static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 val)
+/*
+ * Wait for bits in register to become equal to @readyMask, but at most 20ms.
+ */
+static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask)
 {
 	unsigned long timeout = jiffies + msec20_to_jiffies;
+	u8 value;
 
 	/* 20 msec timeout read */
-	while ((nolock_regb_read(priv, reg) & mask) != val) {
+	while (enc424j600_read_8b_sfr(priv, reg, value) && (value & mask) != readyMask) {
 		if (time_after(jiffies, timeout)) {
 			if (netif_msg_drv(priv))
 				dev_dbg(&priv->spi->dev,
@@ -537,55 +463,35 @@ static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 val)
 		}
 		cpu_relax();
 	}
-	return 0;
-}
 
-/*
- * Wait until the PHY operation is complete.
- */
-static int wait_phy_ready(struct enc424j600_net *priv)
-{
-	return poll_ready(priv, MISTAT, MISTAT_BUSY, 0) ? 0 : 1;
+	return 0;
 }
 
 /*
  * PHY register read
  * PHY registers are not accessed directly, but through the MII
  */
-static u16 enc424j600_phy_read(struct enc424j600_net *priv, u8 address)
+static int enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *data)
 {
-	u16 ret;
-
-	mutex_lock(&priv->lock);
-	/* set the PHY register address */
-	nolock_regb_write(priv, MIREGADR, address);
-	/* start the register read operation */
-	nolock_regb_write(priv, MICMD, MICMD_MIIRD);
-	/* wait until the PHY read completes */
-	wait_phy_ready(priv);
-	/* quit reading */
-	nolock_regb_write(priv, MICMD, 0x00);
-	/* return the data */
-	ret  = nolock_regw_read(priv, MIRDL);
-	mutex_unlock(&priv->lock);
-
+	int ret;
+	
+	enc424j600_write_16b_sfr(priv, MIREGADR, address | (MIREGADRH_VAL << 8));
+	enc424j600_write_16b_sfr(priv, MICMDL, MIIRD);
+	udelay(26);
+	ret = !poll_ready(priv, MISTATL, BUSY, 0);
+	enc424j600_write_16b_sfr(priv, MICMDL, 0);
+	enc424j600_read_16b_sfr(priv, MIRD, data);
 	return ret;
 }
 
-static int enc424j600_phy_write(struct enc424j600_net *priv, u8 address, u16 data)
+static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 {
 	int ret;
 
-	mutex_lock(&priv->lock);
-	/* set the PHY register address */
-	nolock_regb_write(priv, MIREGADR, address);
-	/* write the PHY data */
-	nolock_regw_write(priv, MIWRL, data);
-	/* wait until the PHY write completes and return */
-	ret = wait_phy_ready(priv);
-	mutex_unlock(&priv->lock);
-
-	return ret;
+	enc424j600_write_16b_sfr(priv, MIREGADR, address | (MIREGADRH_VAL << 8));
+	enc424j600_write_16b_sfr(priv, MIWR, data);
+	udelay(26);
+	return !poll_ready(priv, MISTATL, BUSY, 0);
 }
 
 /*
@@ -755,94 +661,120 @@ static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
 	mutex_unlock(&priv->lock);
 }
 
+
+/*
+ * Reset and initialize the chip, but don't enable interrupts and don't
+ * start receiving yet.
+ */
 static int enc424j600_hw_init(struct enc424j600_net *priv)
 {
 	u8 reg;
 
 	if (netif_msg_drv(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() - %s\n", __func__,
-			priv->full_duplex ? "FullDuplex" : "HalfDuplex");
+			priv->autoneg ? "Autoneg" : (priv->full_duplex ? "FullDuplex" : "HalfDuplex"));
 
 	mutex_lock(&priv->lock);
-	/* first reset the chip */
-	enc424j600_soft_reset(priv);
-	/* Clear ECON1 */
-	spi_write_op(priv, ENC28J60_WRITE_CTRL_REG, ECON1, 0x00);
+
 	priv->bank = 0;
 	priv->hw_enable = false;
 	priv->tx_retry_count = 0;
 	priv->max_pk_counter = 0;
 	priv->rxfilter = RXFILTER_NORMAL;
-	/* enable address auto increment and voltage regulator powersave */
-	nolock_regb_write(priv, ECON2, ECON2_AUTOINC | ECON2_VRPS);
+
+	enc424j600_soft_reset(priv);
+
+	/*
+	 * Check the device id and silicon revision id.
+	 */
+	u8 eidledl;
+	enc424j600_read_8b_sfr(priv, EIDLEDL, &eidledl);
+
+	if((eidled & DEVID_MASK) >> DEVID_SHIFT != ENC424J600_DEV_ID)
+		if (netif_msg_drv(priv))
+			printk(KERN_DEBUG DRV_NAME ": %s() Invalid device ID: %d\n",
+				__func__, (eidled & DEVID_MASK) >> DEVID_SHIFT);
+		return 0;
+	}
+
+	if (netif_msg_drv(priv))
+		printk(KERN_INFO DRV_NAME ": Silicon revision ID: 0x%02x\n",
+			(eidled & REVID_MASK) >> REVID_SHIFT);
+	
+
+	/* program ERXST (rx buffer size) */
+	enc424j600_write_16b_sfr(priv, ERXSTL,
+		ENC424J600_SRAM_END - RX_BUFFER_SIZE + 1);
+	
+	/* default filter mode: (unicast OR broadcast) AND crc valid */
+	enc424j600_write_16b_sfr(priv, ERXFCONL, UCEN | BCEN | CRCEN);
+		
+
+	/* TODO: Flow control */
+
+	/* PHANA */
+	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
+	
+	/* PHCON1 */
+	u16 phcon1 = 0;
+	if (priv->autoneg){
+		/* Enable autonegotiation and renegotiate */
+		phcon1 |= ANEN | RENEG;
+	}else{
+		if(priv->speed100)
+			phcon1 |= SPD100;
+		if(priv->full_duplex)
+			phcon1 |= PFULDPX;
+	}
+	enc424j600_phy_write(priv, PHCON1, phcon1);
+
+	/* MACON2
+	 * defer transmission if collision occurs (only for half duplex)
+	 * pad to 60 or 64 bytes and append CRC
+	 * enable receiving huge frames (instead of limiting packet size) */
+	u16 macon2 = MACON2_DEFER | PADCFG2 | PADCFG0 | TXCRCEN | HFRMEN;
+
+	/* If autonegotiation is enabled, we have to wait untill it finishes
+	 * and set the PHYDPX bit in MACON2 correctly */
+	if (priv->autoneg) {
+		u16 phstat1;
+		do {
+			enc424j600_phy_read(priv, PHSTAT, &phstat)
+		} while(!(phstat & ANDONE));
+
+		u8 estath;
+		enc424j600_read_8b_sfr(priv, ESTATH, &estath);
+		if (estath & PHYDPX) {
+			macon2 |= FULDPX;
+		/* read the PHYDPX bit in ESTAT and set FULDPX in MACON2 accordingly */
+	} else if (priv->full_duplex)
+		macon2 |= FULDPX;
+	enc424j600_write_16b_sfr(priv, MACON2, macon2);
+
+	/* MAIPGL
+	 * Recomended values for inter packet gaps */
+	if (!priv->autoneg){
+		enc424j600_write_16b_sfr(priv, MAIPGL, MAIPGL_VAL | MAIPGH_VAL << 8);
+	}
+
+
+	/* LED settings */
+	enc424j600_write_8b_sfr(priv, EIDLEDH,
+		LED_A_SETTINGS << 8 | LED_B_SETTINGS);
+	
+	/* 
+	 * Select enabled interrupts, but don't set the global
+	 * interrupt enable flag.
+	 */
+	enc424j600_write_16b_sfr(priv, EIE,
+		LINKIE << 8 | PKTIE | DMAIE | TXIE |
+		TXABTIE | RXABTIE);
 
 	nolock_rxfifo_init(priv, RXSTART_INIT, RXEND_INIT);
 	nolock_txfifo_init(priv, TXSTART_INIT, TXEND_INIT);
+
 	mutex_unlock(&priv->lock);
 
-	/*
-	 * Check the RevID.
-	 * If it's 0x00 or 0xFF probably the enc424j600 is not mounted or
-	 * damaged
-	 */
-	reg = locked_regb_read(priv, EREVID);
-	if (netif_msg_drv(priv))
-		printk(KERN_INFO DRV_NAME ": chip RevID: 0x%02x\n", reg);
-	if (reg == 0x00 || reg == 0xff) {
-		if (netif_msg_drv(priv))
-			printk(KERN_DEBUG DRV_NAME ": %s() Invalid RevId %d\n",
-				__func__, reg);
-		return 0;
-	}
-
-	/* default filter mode: (unicast OR broadcast) AND crc valid */
-	locked_regb_write(priv, ERXFCON,
-			    ERXFCON_UCEN | ERXFCON_CRCEN | ERXFCON_BCEN);
-
-	/* enable MAC receive */
-	locked_regb_write(priv, MACON1,
-			    MACON1_MARXEN | MACON1_TXPAUS | MACON1_RXPAUS);
-	/* enable automatic padding and CRC operations */
-	if (priv->full_duplex) {
-		locked_regb_write(priv, MACON3,
-				    MACON3_PADCFG0 | MACON3_TXCRCEN |
-				    MACON3_FRMLNEN | MACON3_FULDPX);
-		/* set inter-frame gap (non-back-to-back) */
-		locked_regb_write(priv, MAIPGL, 0x12);
-		/* set inter-frame gap (back-to-back) */
-		locked_regb_write(priv, MABBIPG, 0x15);
-	} else {
-		locked_regb_write(priv, MACON3,
-				    MACON3_PADCFG0 | MACON3_TXCRCEN |
-				    MACON3_FRMLNEN);
-		locked_regb_write(priv, MACON4, 1 << 6);	/* DEFER bit */
-		/* set inter-frame gap (non-back-to-back) */
-		locked_regw_write(priv, MAIPGL, 0x0C12);
-		/* set inter-frame gap (back-to-back) */
-		locked_regb_write(priv, MABBIPG, 0x12);
-	}
-	/*
-	 * MACLCON1 (default)
-	 * MACLCON2 (default)
-	 * Set the maximum packet size which the controller will accept
-	 */
-	locked_regw_write(priv, MAMXFLL, MAX_FRAMELEN);
-
-	/* Configure LEDs */
-	if (!enc424j600_phy_write(priv, PHLCON, ENC28J60_LAMPS_MODE))
-		return 0;
-
-	if (priv->full_duplex) {
-		if (!enc424j600_phy_write(priv, PHCON1, PHCON1_PDPXMD))
-			return 0;
-		if (!enc424j600_phy_write(priv, PHCON2, 0x00))
-			return 0;
-	} else {
-		if (!enc424j600_phy_write(priv, PHCON1, 0x00))
-			return 0;
-		if (!enc424j600_phy_write(priv, PHCON2, PHCON2_HDLDIS))
-			return 0;
-	}
 	if (netif_msg_hw(priv))
 		enc424j600_dump_regs(priv, "Hw initialized.");
 
@@ -851,28 +783,59 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 
 static void enc424j600_hw_enable(struct enc424j600_net *priv)
 {
-	/* enable interrupts */
 	if (netif_msg_hw(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enabling interrupts.\n",
 			__func__);
 
-	enc424j600_phy_write(priv, PHIE, PHIE_PGEIE | PHIE_PLNKIE);
-
 	mutex_lock(&priv->lock);
-	nolock_reg_bfclr(priv, EIR, EIR_DMAIF | EIR_LINKIF |
-			 EIR_TXIF | EIR_TXERIF | EIR_RXERIF | EIR_PKTIF);
-	nolock_regb_write(priv, EIE, EIE_INTIE | EIE_PKTIE | EIE_LINKIE |
-			  EIE_TXIE | EIE_TXERIE | EIE_RXERIE);
+
+	/* Clear any pending interrupts */
+	enc424j600_write_16b_sfr(priv, EIRL, 0);
+
+	/* Enable global interrupt flag */
+	enc424j600_set_bits(priv, EIEH, INTIE);
 
 	/* enable receive logic */
-	nolock_reg_bfset(priv, ECON1, ECON1_RXEN);
+	enc424j600_set_bits(priv, ECON1L, RXEN);
 	priv->hw_enable = true;
 	mutex_unlock(&priv->lock);
 }
 
 static void enc424j600_hw_disable(struct enc424j600_net *priv)
 {
+	if (netif_msg_hw(priv))
+		printk(KERN_DEBUG DRV_NAME ": %s() disabling interrupts.\n",
+			__func__);
+
 	mutex_lock(&priv->lock);
+
+	/* disable receive logic */
+	enc424j600_clear_bits(priv, ECON1L, RXEN);
+
+	/* Enable global interrupt flag */
+	enc424j600_clear_bits(priv, EIEH, INTIE);
+
+	priv->hw_enable = false;
+
+	mutex_unlock(&priv->lock);
+}
+
+static void enc424j600_hw_disable(struct enc424j600_net *priv)
+{
+	if (netif_msg_hw(priv))
+		printk(KERN_DEBUG DRV_NAME ": %s() disabling interrupts.\n",
+			__func__);
+
+	mutex_lock(&priv->lock);
+	/* disable interrutps and packet reception */
+	nolock_regb_write(priv, EIE, 0x00);
+	nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
+	priv->hw_enable = false;
+	mutex_unlock(&priv->lock);
+}
+
+static int
+enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	/* disable interrutps and packet reception */
 	nolock_regb_write(priv, EIE, 0x00);
 	nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
@@ -889,13 +852,12 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	if (!priv->hw_enable) {
 		/* link is in low power mode now; duplex setting
 		 * will take effect on next enc424j600_hw_init().
-	 /* Poll CLOCKRDY (ESTAT)
-	 /* Poll CLOCKRDY (ESTAT)
-	 /* Poll CLOCKRDY (ESTAT)
 		 */
-		if (autoneg == AUTONEG_DISABLE && speed == SPEED_10)
+		if (speed == SPEED_10 || speed = SPEED_100)
+			priv->autoneg = (autoneg == AUTONEG_ENABLE);
 			priv->full_duplex = (duplex == DUPLEX_FULL);
-		else {
+			priv->speed100 = (speed == SPEED_100);
+		} else {
 			if (netif_msg_link(priv))
 				dev_warn(&ndev->dev,
 					"unsupported link setting\n");

@@ -253,7 +253,7 @@
 #define EXDEFER		(1 << 0)
 
 /* ETXSTATL */
-#define DEFER		(1 << 7)
+#define ETXSTATL_DEFER	(1 << 7)
 #define CRCBAD		(1 << 4)
 #define COLCNT_MASK	0xF
 
@@ -281,12 +281,10 @@
 #define RXPAUS		(1 << 2)
 #define PASSALL		(1 << 1)
 
-/* MACON2H */
-#define DEFER		(1 << 6)
-#define BPEN		(1 << 5)
-#define NOBKOFF		(1 << 4)
-
-/* MACON2L */
+/* MACON2 */
+#define MACON2_DEFER	(1 << 14)
+#define BPEN		(1 << 13)
+#define NOBKOFF		(1 << 12)
 #define PADCFG2		(1 << 7)
 #define PADCFG1		(1 << 6)
 #define PADCFG0		(1 << 5)
@@ -294,6 +292,20 @@
 #define PHDREN		(1 << 3)
 #define HFRMEN		(1 << 2)
 #define FULDPX		(1 << 0)
+
+/* MAIPG */
+/* value of the high byte is given by the reserved bits,
+ * value of the low byte is recomended setting of the 
+ * IPG parameter.
+ */
+#define MAIPGH_VAL	0x0C
+#define MAIPGL_VAL	0x12
+
+/* MIREGADRH */
+#define MIREGADRH_VAL	0x01
+
+/* MIREGADRL */
+#define PHREG_MASK	0x1F
 
 /* MICMDL */
 #define MIISCAN		(1 << 1)
@@ -355,13 +367,54 @@
 #define REVID_SHIFT	0
 #define REVID_MASK	(0x1F << REVID_SHIFT)
 
+/* PHANA */
+/* Default value for PHY initialization
+ */
+#define PHANA_DEFAULT	0x05E1
+
+/* PHCON1 */
+#define PRST		(1 << 15)
+#define PLOOPBK		(1 << 14)
+#define SPD100		(1 << 13)
+#define ANEN		(1 << 12)
+#define PSLEEP		(1 << 11)
+#define RENEG		(1 << 9)
+#define PFULDPX		(1 << 8)
+
+/* PHSTAT */
+#define FULL100		(1 << 14)
+#define HALF100		(1 << 13)
+#define FULL10		(1 << 12)
+#define HALF10		(1 << 11)
+#define ANDONE		(1 << 5)
+#define LRFAULT		(1 << 4)
+#define ANABLE		(1 << 3)
+#define LLSTAT		(1 << 2)
+#define EXTREGS		(1 << 0)
 
 /* SRAM size */
 #define ENC424J600_SRAM_END	0x5FFF
 
+#define ENC424J600_DEV_ID	0x1
+
 /* Configuration */
 
-/* maximum ethernet frame length */
+/* Led is on when the link is present and driven low
+ * temporarily when packet is TX'd or RX'd */
+#define LED_A_SETTINGS		0xC
+
+/* Led is on if the link is in 100 Mbps mode */
+#define LED_B_SETTINGS		0x8
+
+/* maximum ethernet frame length
+ * Currently not used as a limit anywhere
+ * (we're using the "huge frame enable" feature of
+ * enc424j600). */
 #define MAX_FRAMELEN		1518
+
+/* Size in bytes of the receive buffer in enc424j600.
+ * Must be word aligned (even).
+ */
+#define RX_BUFFER_SIZE		(8 * MAX_FRAMELEN)
 
 #endif
