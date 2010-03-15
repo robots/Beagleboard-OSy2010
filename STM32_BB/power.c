@@ -71,10 +71,15 @@ void PWR_Init() {
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_3, 4, ADC_SampleTime_55Cycles5);
 
 	/* calibrate ADC */
-/*TODO: fix me !!!
+	/* Enable ADC1 reset calibaration register */
+	ADC_ResetCalibration(ADC1);
+	/* Check the end of ADC1 reset calibration register */
+	while(ADC_GetResetCalibrationStatus(ADC1));
+
+	/* Start ADC1 calibaration */
 	ADC_StartCalibration(ADC1);
-	while (ADC_GetCalibrationStatus(ADC1) == SET);
-*/
+	/* Check the end of ADC1 calibration */
+	while(ADC_GetCalibrationStatus(ADC1));
 
 /* setup external interrupts */
 	/* PB2 - ACPRES, PB5 - ALARM */
@@ -86,23 +91,23 @@ void PWR_Init() {
 	/* switch exti to port B */
 	GPIO_EXTILineConfig(GPIO_PortSourceGPIOB, GPIO_PinSource2);
 	GPIO_EXTILineConfig(GPIO_PortSourceGPIOB, GPIO_PinSource5);
-	
+
 	/* setup EXTI trigger mode */
 	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
 	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
 	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
-	
+
 	EXTI_InitStructure.EXTI_Line = EXTI_Line2;
 	EXTI_Init(&EXTI_InitStructure);
-	
+
 	EXTI_InitStructure.EXTI_Line = EXTI_Line5;
 	EXTI_Init(&EXTI_InitStructure);
-	
+
 	/* enable interrupt at NVIC */
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	
+
 	NVIC_InitStructure.NVIC_IRQChannel = EXTI9_5_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
@@ -138,7 +143,7 @@ void PWR_Init() {
 	TIM_OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
 	TIM_OC3Init(TIM3, &TIM_OCInitStruct);
 	TIM_OC4Init(TIM3, &TIM_OCInitStruct);
-	
+
 /* setup output pins */
 	/* PB6 - ACSEL, PB7 - ENABLE */
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
