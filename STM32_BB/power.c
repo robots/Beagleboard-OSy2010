@@ -218,8 +218,10 @@ void EXTI2_IRQHandler(void) {
 void EXTI9_5_IRQHandler(void) { 
 	if (PWR_ALARM() == Bit_SET) {
 		PWR_Status |= PWR_STAT_ALARM;
+		LED_RED(Bit_RESET);
 	} else {
 		PWR_Status &= ~PWR_STAT_ALARM;
+		LED_RED(Bit_SET);
 	}
 
 	/* notify host */

@@ -33,12 +33,14 @@ void SYS_ChangeIntFlag(uint16_t in) {
 	SYS_InterruptFlag |= in;
 	if (SYS_InterruptEnable & in) {
 		SPI_INT_WRITE(Bit_RESET);
+		LED_YELLOW(Bit_RESET);
 	}
 }
 
 void SYS_IntFlagWriteHandle(void) {
 	if ((SYS_InterruptFlag & SYS_InterruptEnable) == 0x0000) {
 		SPI_INT_WRITE(Bit_SET);
+		LED_YELLOW(Bit_SET);
 	}
 }
 

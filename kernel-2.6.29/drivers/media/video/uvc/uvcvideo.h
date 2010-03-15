@@ -639,7 +639,7 @@ struct uvc_device {
 	char name[32];
 
 	enum uvc_device_state state;
-+	unsigned long last_urb;
+	unsigned long last_urb;
 	struct kref kref;
 	struct list_head list;
 

@@ -275,7 +275,7 @@ LDFLAGS += -lc
 LDFLAGS += $(patsubst %,-l%,$(EXTRA_LIBS))
 #LDFLAGS += $(MATH_LIB)
 LDFLAGS += $(CPLUSPLUS_LIB)
-LDFLAGS += -lc -lgcc 
+#LDFLAGS += -lc -lgcc 
 
 # Set linker-script name depending on selected run-mode and submodel name
 ifeq ($(RUN_MODE),RAM_RUN)
