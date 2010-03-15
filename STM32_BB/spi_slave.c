@@ -37,6 +37,7 @@ uint8_t SPI1_DMA_Type = SPI1_CMD;
 
 /* command received */
 uint8_t SPI1_Cmd;
+static uint8_t dummy;
 
 /* queue for worker thread */
 xQueueHandle xDMAQueue = NULL;
@@ -61,17 +62,33 @@ void SPI1_Slave_Init() {
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
-	// Configure SPI1 pins: NSS, SCK, MISO and MOSI
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_7;
+	// Configure SPI1 pins
+	// MOSI
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; // alternate function
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+	
+	// MISO
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; // alt. fnc. push-pull
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	// CLK
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input 
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	// NSS
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	SPIConf.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
 	SPIConf.SPI_Mode = SPI_Mode_Slave;
 	SPIConf.SPI_DataSize = SPI_DataSize_8b;
-	SPIConf.SPI_CPOL = SPI_CPOL_High;
-	SPIConf.SPI_CPHA = SPI_CPHA_2Edge;
+	SPIConf.SPI_CPOL = SPI_CPOL_Low;
+	SPIConf.SPI_CPHA = SPI_CPHA_1Edge;
 	SPIConf.SPI_NSS = SPI_NSS_Hard;
 	SPIConf.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_4; //not used in slave
 	SPIConf.SPI_FirstBit = SPI_FirstBit_MSB;
@@ -79,6 +96,7 @@ void SPI1_Slave_Init() {
 
 
 	SPI_Init(SPI1, &SPIConf);
+	SPI_SSOutputCmd(SPI1, DISABLE);
 	SPI_Cmd(SPI1, ENABLE);
 
 	SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
@@ -100,7 +118,7 @@ void SPI1_Slave_Init() {
 	DMA_ITConfig(DMA1_Channel3, DMA_IT_TC, ENABLE);
 
 	/* Init DMA Channel (SPI->MEM) */
-	DMA_InitStructure.DMA_Priority = DMA_Priority_Medium;
+	DMA_InitStructure.DMA_Priority = DMA_Priority_High;
 	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
 
 	DMA_Init(DMA1_Channel2, &DMA_InitStructure);
@@ -108,7 +126,7 @@ void SPI1_Slave_Init() {
 
 
 	/* enable RX DMA */
-	DMA1_Channel2->CMAR = (uint32_t)SPI1_Cmd;
+	DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
 	DMA1_Channel2->CNDTR = sizeof(SPI1_Cmd);
 
 	DMA_Cmd(DMA1_Channel2, ENABLE);
@@ -123,7 +141,7 @@ void SPI1_Slave_Init() {
 	NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel3_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
-	/* spi1 isr does not rely on freertos api - can have higher priority */
+	/* spi1 ISR does not rely on FreeRTOS api - can be higher priority */
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY - 1;
 	NVIC_InitStructure.NVIC_IRQChannel = SPI1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
@@ -148,6 +166,9 @@ void SPI1_IRQHandler(void) {
 	/* disable interrupt */
 	SPI1->CR2 &= (uint16_t)~((1 << SPI_IT_RXNE) | (1 << SPI_IT_TXE));
 
+	// clear the TXE bit if set
+	dummy = SPI1->DR;
+
 	if (SPI1_Cmd & CMD_WRITE) {
 		/* enable RX DMA */
 		DMA1_Channel2->CCR |= CCR_ENABLE_Set;
@@ -163,23 +184,27 @@ void DMA1_Channel2_IRQHandler(void) {
 
 	/* disable DMA */
 	DMA1_Channel2->CCR &= ~CCR_ENABLE_Set;
-	/* clear int pending bit */
+	/* clear int pending bit on DMA2 */
 	DMA1->IFCR = DMA1_IT_GL2;
 
 	if (SPI1_DMA_Type == SPI1_DATA) {
 		xQueueSendFromISR( xDMAQueue, &DMA_Callback, &pxHigherPriorityTaskWoken);
 		DMA_Callback = NULL;
-		SPI1_DMA_Type = SPI1_DATA; // next is data
+
 		DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
 		DMA1_Channel2->CNDTR = 1;
-		DMA1_Channel3->CCR |= CCR_ENABLE_Set;
+		DMA1_Channel2->CCR |= CCR_ENABLE_Set;
+
+		SPI1_DMA_Type = SPI1_CMD; // next is command
 		portEND_SWITCHING_ISR( pxHigherPriorityTaskWoken );
 	} else {
-		SPI1_DMA_Type = SPI1_DATA; // return to command mode
+		SPI1_DMA_Type = SPI1_DATA; // data is next
 
 		/* we have time to setup another trancation */
 		if (SPI1_Cmd & CMD_WRITE) { /* WRITE */
-			SPI1->CR2 |= (uint16_t)((uint16_t)1 << SPI_IT_RXNE);
+			/* read - to clear RXNE flag */
+			dummy = SPI1->DR;
+			SPI1->CR2 |= (uint16_t)(1 << SPI_IT_RXNE);
 			switch (SPI1_Cmd & 0x7F) {
 				case SYS_INTE:
 					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptEnable;
@@ -223,9 +248,16 @@ void DMA1_Channel2_IRQHandler(void) {
 				default:
 					/* fault ... receive command byte again */
 					SPI1_DMA_Type = SPI1_CMD;
+					DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
+					DMA1_Channel2->CNDTR = 1;
+					DMA1_Channel2->CCR |= CCR_ENABLE_Set;
+					SPI1->CR2 &= (uint16_t)~((1 << SPI_IT_RXNE) | (1 << SPI_IT_TXE));
 					break;
 			}
 		} else { /* READ */
+			/* put something in the tx fifo, this ensures that TXE flag is cleared */
+			SPI1->DR = 0x55;
+			/* enable SPI tx empty interrupt */
 			SPI1->CR2 |= (uint16_t)(1 << SPI_IT_TXE);
 			DMA_Callback = NULL;
 			switch (SPI1_Cmd) {
@@ -272,8 +304,8 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CNDTR = sizeof(PWR_Status);
 					break;
 				case PWR_CTRL:
-					DMA1_Channel2->CMAR = (uint32_t)&PWR_Control;
-					DMA1_Channel2->CNDTR = sizeof(PWR_Control);
+					DMA1_Channel3->CMAR = (uint32_t)&PWR_Control;
+					DMA1_Channel3->CNDTR = sizeof(PWR_Control);
 					break;
 				case PWR_I_SET:
 					DMA1_Channel3->CMAR = (uint32_t)&PWR_I_Set;
@@ -286,6 +318,10 @@ void DMA1_Channel2_IRQHandler(void) {
 				default:
 					/* fault ... receive command byte again */
 					SPI1_DMA_Type = SPI1_CMD;
+					DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
+					DMA1_Channel2->CNDTR = 1;
+					DMA1_Channel2->CCR |= CCR_ENABLE_Set;
+					SPI1->CR2 &= (uint16_t)~((1 << SPI_IT_RXNE) | (1 << SPI_IT_TXE));
 					break;
 			}
 		}
@@ -301,11 +337,16 @@ void DMA1_Channel3_IRQHandler(void) {
 	/* clear int pending bit */
 	DMA1->IFCR = DMA1_IT_GL3;
 
+	/* read - to clear RXNE flag
+	 * enabled DMA would read this data, and we don't like that
+	 */
+	dummy = SPI1->DR;
+
 	// send data to worker thread
 	xQueueSendFromISR( xDMAQueue, &DMA_Callback, &pxHigherPriorityTaskWoken);
 	DMA_Callback = NULL;
 
-	// awaiting command
+	// awaiting command in next transfer
 	SPI1_DMA_Type = SPI1_CMD;
 
 	// enable dma
