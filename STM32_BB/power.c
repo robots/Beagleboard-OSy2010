@@ -75,7 +75,7 @@ void PWR_Init() {
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_55Cycles5);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_2, 3, ADC_SampleTime_55Cycles5);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_3, 4, ADC_SampleTime_55Cycles5);
-
+/*
 // calibrate ADC
 	// Enable ADC1 reset calibaration register
 	ADC_ResetCalibration(ADC1);
@@ -86,7 +86,7 @@ void PWR_Init() {
 	ADC_StartCalibration(ADC1);
 	// Check the end of ADC1 calibration
 	while(ADC_GetCalibrationStatus(ADC1));
-
+*/
 // setup external interrupts
 	// PB2 - ACPRES, PB5 - ALARM
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_5;
