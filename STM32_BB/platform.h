@@ -1,3 +1,9 @@
+/*
+ * Platform specific file
+ *
+ * 2010 Michal Demin
+ *
+ */
 #ifndef PLATFORM_H_
 #define PLATFORM_H_
 

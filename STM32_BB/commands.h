@@ -1,3 +1,10 @@
+/*
+ * SPI Slave Commands
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #ifndef COMMANDS_H_
 #define COMMANDS_H_
 

@@ -1,3 +1,10 @@
+/*
+ * External interrupt and system managenment
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"

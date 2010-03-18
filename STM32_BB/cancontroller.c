@@ -1,3 +1,10 @@
+/*
+ * bxCAN driver for STM32 family processors
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #include "FreeRTOS.h"
 /*#include "task.h"
 #include "queue.h"

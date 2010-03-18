@@ -1,7 +1,7 @@
 /*
- * SPI driver for STM32 family processors
+ * SPI Slave driver for STM32 family processors
  *
- * 2009-2010 Michal Demin
+ * 2010 Michal Demin
  *
  */
 

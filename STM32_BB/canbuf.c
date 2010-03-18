@@ -1,3 +1,10 @@
+/*
+ * Ring buffer for CAN messages
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #include "FreeRTOS.h"
 /*#include "task.h"
 #include "queue.h"

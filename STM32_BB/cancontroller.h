@@ -1,3 +1,10 @@
+/*
+ * bxCAN driver for STM32 family processors
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #ifndef CANCONTROLLER_H_
 #define CANCONTROLLER_H_
 

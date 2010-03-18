@@ -1,3 +1,10 @@
+/*
+ * External interrupt and system managenment
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #ifndef SYS_H_
 #define SYS_H_
 

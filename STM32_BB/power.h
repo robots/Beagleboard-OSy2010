@@ -1,3 +1,10 @@
+/*
+ * Power Managenment for STM32 family processors
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #ifndef POWER_H_
 #define POWER_H_
 

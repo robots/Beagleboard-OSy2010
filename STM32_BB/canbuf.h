@@ -1,3 +1,10 @@
+/*
+ * Ring buffer for CAN messages
+ *
+ * 2010 Michal Demin
+ *
+ */
+
 #ifndef CANBUF_H_
 #define CANBUF_H_
 
