@@ -17,7 +17,7 @@ struct stack_t {
 
 void halt_faulty(struct stack_t *faulty_stack) {
 	(void)faulty_stack;
-	/* Inspect faulty_stack->pc to locate the offending instruction. */
+	// Inspect faulty_stack->pc to locate the offending instruction.
 	while(1);
 }
 

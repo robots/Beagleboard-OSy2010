@@ -16,7 +16,7 @@ volatile uint16_t SYS_Reset = 0x0000;
 void SYS_Init() {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	/* SPI Int as OD output */
+	// SPI Int as OD output
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
@@ -25,7 +25,7 @@ void SYS_Init() {
 	SYS_InterruptEnable = 0x0000;
 	SYS_InterruptFlag = 0x0000;
 
-	/* leave the pin in Hi-Z */
+	// leave the pin in Hi-Z
 	SPI_INT_WRITE(Bit_SET);
 }
 
@@ -48,7 +48,8 @@ void SYS_ResetHandler(void) {
 	if (SYS_Reset == SYS_RESET_MAGIC) {
 		SYS_Reset = 0x0000;
 
-		/* do reset */
+		// do reset
+		// TODO: add RCC reset to main, to reset peripherals !
 		NVIC_SystemReset();
 	}
 }

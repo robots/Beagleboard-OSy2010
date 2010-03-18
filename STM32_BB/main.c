@@ -16,14 +16,14 @@
 extern uint32_t _isr_vectorsram_offs;
 void NVIC_Configuration(void)
 {
-	/* Set the Vector Table base location at 0x20000000+_isr_vectorsram_offs */
+	// Set the Vector Table base location at 0x20000000+_isr_vectorsram_offs
 	NVIC_SetVectorTable(NVIC_VectTab_RAM, (uint32_t)&_isr_vectorsram_offs);
 }
 #else
 extern uint32_t _isr_vectorsflash_offs;
 void NVIC_Configuration(void)
 {
-	/* Set the Vector Table base location at 0x08000000+_isr_vectorsflash_offs */
+	// Set the Vector Table base location at 0x08000000+_isr_vectorsflash_offs
 	NVIC_SetVectorTable(NVIC_VectTab_FLASH, (uint32_t)&_isr_vectorsflash_offs);
 }
 #endif /* VECT_TAB_RAM */
@@ -32,7 +32,7 @@ void RCC_Configuration(void)
 {
 	SystemInit();
 
-	/* Enable GPIO for led */
+	// Enable GPIO for led
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
 
@@ -43,22 +43,22 @@ void GPIO_Configuration(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	/* disable JTAG !!! */
+	// disable JTAG !!!
 //	GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
 
-	/* set PA[0-4] as analog inputs */
+	// set PA[0-4] as analog inputs
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	/* set LED Open-drain */
+	// set LED Open-drain
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	/* pins to HiZ state */
+	// pins to HiZ state
 	LED_YELLOW(Bit_SET);
 	LED_GREEN(Bit_SET);
 	LED_RED(Bit_SET);
@@ -66,14 +66,14 @@ void GPIO_Configuration(void)
 
 int main(void)
 {
-	/* System Clocks Configuration */
+	// System Clocks Configuration
 	RCC_Configuration();
 
-	/* NVIC configuration */
+	// NVIC configuration
 	NVIC_Configuration();
 	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
-	/* Configure the GPIO ports */
+	// Configure the GPIO ports
 	GPIO_Configuration();
 
 	SYS_Init();
@@ -108,6 +108,7 @@ void vApplicationTickHook( void ) {
 }
 
 void vApplicationIdleHook( void ) {
-	__WFI();
+	static uint32_t bla;
+	bla++;
 }
 
