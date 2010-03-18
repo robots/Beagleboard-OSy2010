@@ -142,7 +142,7 @@ void SPI1_Slave_Init() {
 	NVIC_Init(&NVIC_InitStructure);
 
 	// spi1 ISR does not rely on FreeRTOS api - can be higher priority
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY - 1;
 	NVIC_InitStructure.NVIC_IRQChannel = SPI1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
