@@ -10,12 +10,12 @@
 
 #include "power.h"
 
-struct pwr_data_t PWR_Measurement_Data = {0, 0, 0, 0};
-struct pwr_i_set_t PWR_I_Set = {0, 0};
+volatile struct pwr_data_t PWR_Measurement_Data = {0, 0, 0, 0};
+volatile struct pwr_i_set_t PWR_I_Set = {0, 0};
 
-uint16_t PWR_Control = 0x0000;
-uint16_t PWR_Control_Last = 0x0000;
-uint16_t PWR_Status = 0x0000;
+volatile uint16_t PWR_Control = 0x0000;
+volatile uint16_t PWR_Control_Last = 0x0000;
+volatile uint16_t PWR_Status = 0x0000;
 
 void PWR_Init() {
 	ADC_InitTypeDef ADC_InitStructure;

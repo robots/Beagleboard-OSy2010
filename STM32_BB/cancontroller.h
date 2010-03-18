@@ -58,15 +58,15 @@ void CANController_TxHandle(void);
 void CANController_ControlHandle(void);
 void CANController_TimingHandle(void);
 
-extern uint32_t CANController_Error; 
-extern uint16_t CANController_Status; 
-extern uint16_t CANController_Control; 
+extern volatile uint32_t CANController_Error; 
+extern volatile uint16_t CANController_Status; 
+extern volatile uint16_t CANController_Control; 
 
-extern struct can_timing_t CANController_Timing;
+extern volatile struct can_timing_t CANController_Timing;
 
-extern struct can_message_t *CANController_RX0;
-extern struct can_message_t *CANController_RX1;
-extern struct can_message_t *CANController_TX;
+extern volatile struct can_message_t *CANController_RX0;
+extern volatile struct can_message_t *CANController_RX1;
+extern volatile struct can_message_t *CANController_TX;
 
 #endif
 

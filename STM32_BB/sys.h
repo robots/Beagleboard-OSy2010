@@ -11,10 +11,10 @@
 
 #define SYS_RESET_MAGIC  0xBABE
 
-extern uint16_t SYS_InterruptEnable;
-extern uint16_t SYS_InterruptFlag;
-extern uint16_t SYS_Identifier;
-extern uint16_t SYS_Reset;
+extern volatile uint16_t SYS_InterruptEnable;
+extern volatile uint16_t SYS_InterruptFlag;
+extern const uint16_t SYS_Identifier;
+extern volatile uint16_t SYS_Reset;
 
 void SYS_Init();
 void SYS_ChangeIntFlag(uint16_t);

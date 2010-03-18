@@ -12,17 +12,17 @@
 #include "cancontroller.h"
 
 
-uint16_t CANController_Status = 0x0000;
-uint16_t CANController_Control = 0x0000;
-uint16_t CANController_Control_Last = 0x0000;
-uint32_t CANController_Error = 0x0000;
+volatile uint16_t CANController_Status = 0x0000;
+volatile uint16_t CANController_Control = 0x0000;
+volatile uint16_t CANController_Control_Last = 0x0000;
+volatile uint32_t CANController_Error = 0x0000;
 
-struct can_timing_t CANController_Timing;
+volatile struct can_timing_t CANController_Timing;
 
-struct can_message_t *CANController_RX0;
-struct can_message_t *CANController_RX1;
-struct can_message_t CANController_TXBuffer;
-struct can_message_t *CANController_TX;
+volatile struct can_message_t *CANController_RX0;
+volatile struct can_message_t *CANController_RX1;
+volatile struct can_message_t CANController_TXBuffer;
+volatile struct can_message_t *CANController_TX;
 
 struct can_buffer_t CANController_RX0Buffer;
 struct can_buffer_t CANController_RX1Buffer;

@@ -8,10 +8,10 @@
 
 #include "sys.h"
 
-uint16_t SYS_InterruptEnable = 0x0000;
-uint16_t SYS_InterruptFlag = 0x0000;
-uint16_t SYS_Identifier = 0xCAFE;
-uint16_t SYS_Reset = 0x0000;
+volatile uint16_t SYS_InterruptEnable = 0x0000;
+volatile uint16_t SYS_InterruptFlag = 0x0000;
+const uint16_t SYS_Identifier = 0xCAFE;
+volatile uint16_t SYS_Reset = 0x0000;
 
 void SYS_Init() {
 	GPIO_InitTypeDef GPIO_InitStructure;

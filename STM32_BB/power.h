@@ -21,10 +21,10 @@ struct pwr_i_set_t {
 	uint16_t i_bat;
 } __attribute__ ((packed));
 
-extern struct pwr_data_t PWR_Measurement_Data;
-extern struct pwr_i_set_t PWR_I_Set;
-extern uint16_t PWR_Control;
-extern uint16_t PWR_Status;
+extern volatile struct pwr_data_t PWR_Measurement_Data;
+extern volatile struct pwr_i_set_t PWR_I_Set;
+extern volatile uint16_t PWR_Control;
+extern volatile uint16_t PWR_Status;
 
 
 void PWR_Init();
