@@ -98,7 +98,7 @@ SECTIONS
 
     PROVIDE ( end = _ebss );
     PROVIDE ( _end = _ebss );
-    
+
     /* This is the user stack section 
     This is just to check that there is enough RAM left for the User mode stack
     It should generate an error if it's full.
@@ -122,11 +122,11 @@ SECTIONS
         *(.b1rodata)                 /* read-only data (constants) */
         *(.b1rodata*)
     } >FLASHB1
-    
+
     /* this is the EXTMEM */
     /* the C or assembly source must explicitly place the code or data there
     using the "section" attribute */
-    
+
     /* EXTMEM Bank0 */
     .eb0text :
     {
@@ -134,7 +134,7 @@ SECTIONS
         *(.eb0rodata)                 /* read-only data (constants) */
         *(.eb0rodata*)
     } >EXTMEMB0
-    
+
     /* EXTMEM Bank1 */
     .eb1text :
     {

@@ -4,9 +4,9 @@
  * 2010 Michal Demin
  *
  */
-
+/*
 #include "FreeRTOS.h"
-/*#include "task.h"
+#include "task.h"
 #include "queue.h"
 #include "semphr.h"
 */
@@ -75,8 +75,10 @@ void PWR_Init() {
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_55Cycles5);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_2, 3, ADC_SampleTime_55Cycles5);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_3, 4, ADC_SampleTime_55Cycles5);
-/*
+
 // calibrate ADC
+	// Enable ADC1
+	ADC_Cmd(ADC1, ENABLE);
 	// Enable ADC1 reset calibaration register
 	ADC_ResetCalibration(ADC1);
 	// Check the end of ADC1 reset calibration register
@@ -86,7 +88,10 @@ void PWR_Init() {
 	ADC_StartCalibration(ADC1);
 	// Check the end of ADC1 calibration
 	while(ADC_GetCalibrationStatus(ADC1));
-*/
+	// Disable ADC1, will be enabled by SW
+	ADC_Cmd(ADC1, DISABLE);
+
+
 // setup external interrupts
 	// PB2 - ACPRES, PB5 - ALARM
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_5;
@@ -110,7 +115,7 @@ void PWR_Init() {
 	EXTI_Init(&EXTI_InitStructure);
 
 	// enable interrupt at NVIC
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 15;//configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 

@@ -4,9 +4,9 @@
  * 2010 Michal Demin
  *
  */
-
+/*
 #include "FreeRTOS.h"
-/*#include "task.h"
+#include "task.h"
 #include "queue.h"
 #include "semphr.h"
 */
@@ -58,6 +58,7 @@ void CANController_Init(void) {
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
+	// Reset CAN1
 	CAN_DeInit(CAN1);
 
 	// CAN filter init - all messages to FIFO0 
@@ -73,7 +74,7 @@ void CANController_Init(void) {
 	CAN_FilterInit(&CAN_FilterInitStructure);
 
 
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14; //configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 
@@ -180,8 +181,9 @@ void CANController_ControlHandle(void) {
 	// bxCAN HW reset !
 	if (change & CAN_CTRL_RST) {
 		if (CANController_Control & CAN_CTRL_RST) {
-			// TODO: shouldn't we also clear FIFOs, INTs, etc ? 
-			CAN1->MCR |= CAN_MCR_RESET;
+			//CAN1->MCR |= CAN_MCR_RESET;
+			// call init, it resets can Hw to default state 
+			CANController_Init();
 		}
 	}
 

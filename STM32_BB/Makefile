@@ -87,13 +87,13 @@ SRC += $(STMSPDSRCDIR)/stm32f10x_adc.c
 SRC += $(STMSPDSRCDIR)/misc.c
 
 # FreeRTOS-specific stuff
-SRC += $(RTOSSRCDIR)/croutine.c
-SRC += $(RTOSSRCDIR)/list.c
-SRC += $(RTOSSRCDIR)/queue.c
-SRC += $(RTOSSRCDIR)/tasks.c
-SRC += $(RTOSPORTSRCDIR)/port.c
-SRC += $(RTOSMEMSRCDIR)/heap_2.c
-
+#SRC += $(RTOSSRCDIR)/croutine.c
+#SRC += $(RTOSSRCDIR)/list.c
+#SRC += $(RTOSSRCDIR)/queue.c
+#SRC += $(RTOSSRCDIR)/tasks.c
+#SRC += $(RTOSPORTSRCDIR)/port.c
+#SRC += $(RTOSMEMSRCDIR)/heap_2.c
+#
 # needed for newlib
 #SRC += $(RTOSMEMSRCDIR)/alloc.c 
 
@@ -155,8 +155,8 @@ LINKERSCRIPTPATH = .
 # Optimization level, can be [0, 1, 2, 3, s]. 
 # 0 = turn off optimization. s = optimize for size.
 # (Note: 3 is not always the best optimization level. See avr-libc FAQ.)
-OPT = s
-#OPT = 2
+#OPT = s
+OPT = 2
 #OPT = 3
 #OPT = 0
 
@@ -173,6 +173,7 @@ DEBUG = dwarf-2
 # Place project-specific -D (define) and/or 
 # -U options for C here.
 CDEFS = -D$(CLASS)
+#CDEFS += -DFREERTOS
 CDEFS += -DRAMSIZE=$(RAMSIZE)
 CDEFS += -DHSE_VALUE=$(F_XTAL)UL
 CDEFS += -D$(SYSCLOCK_CL)
@@ -222,7 +223,7 @@ THUMB    = -mthumb
 #
 # Flags for C and C++ (arm-elf-gcc/arm-elf-g++)
 CFLAGS =  -g$(DEBUG)
-#CFLAGS += -O$(OPT)
+CFLAGS += -O$(OPT)
 CFLAGS += -mcpu=$(MCU) $(THUMB_IW)  
 CFLAGS += $(CDEFS)
 CFLAGS += $(patsubst %,-I%,$(EXTRAINCDIRS)) -I.
