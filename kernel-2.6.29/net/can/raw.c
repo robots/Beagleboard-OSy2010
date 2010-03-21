@@ -42,6 +42,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/version.h>
 #include <linux/init.h>
 #include <linux/uio.h>
 #include <linux/net.h>
@@ -49,11 +50,19 @@
 #include <linux/socket.h>
 #include <linux/if_arp.h>
 #include <linux/skbuff.h>
-#include <linux/can.h>
-#include <linux/can/core.h>
-#include <linux/can/raw.h>
+#include <socketcan/can.h>
+#include <socketcan/can/core.h>
+#include <socketcan/can/raw.h>
 #include <net/sock.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 #include <net/net_namespace.h>
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
+#include "compat.h"
+#endif
+
+#include <socketcan/can/version.h> /* for RCSID. Removed by mkpatch script */
+RCSID("$Id: raw.c 1077 2009-11-06 16:54:18Z hartkopp $");
 
 #define CAN_RAW_VERSION CAN_VERSION
 static __initdata const char banner[] =
@@ -62,6 +71,7 @@ static __initdata const char banner[] =
 MODULE_DESCRIPTION("PF_CAN raw protocol");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Urs Thuermann <urs.thuermann@volkswagen.de>");
+MODULE_ALIAS("can-proto-1");
 
 #define MASK_ALL 0
 
@@ -76,7 +86,11 @@ MODULE_AUTHOR("Urs Thuermann <urs.thuermann@volkswagen.de>");
  */
 
 struct raw_sock {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	struct sock sk;
+#else
+	struct sock *sk;
+#endif
 	int bound;
 	int ifindex;
 	struct notifier_block notifier;
@@ -90,7 +104,11 @@ struct raw_sock {
 
 static inline struct raw_sock *raw_sk(const struct sock *sk)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	return (struct raw_sock *)sk;
+#else
+	return (struct raw_sock *)sk->sk_protinfo;
+#endif
 }
 
 static void raw_rcv(struct sk_buff *skb, void *data)
@@ -209,10 +227,19 @@ static int raw_notifier(struct notifier_block *nb,
 {
 	struct net_device *dev = (struct net_device *)data;
 	struct raw_sock *ro = container_of(nb, struct raw_sock, notifier);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	struct sock *sk = &ro->sk;
+#else
+	struct sock *sk = ro->sk;
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
+	if (dev->nd_net != &init_net)
+		return NOTIFY_DONE;
+#endif
 
 	if (dev->type != ARPHRD_CAN)
 		return NOTIFY_DONE;
@@ -255,6 +282,9 @@ static int raw_init(struct sock *sk)
 {
 	struct raw_sock *ro = raw_sk(sk);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,12)
+	ro->sk               = sk;
+#endif
 	ro->bound            = 0;
 	ro->ifindex          = 0;
 
@@ -305,6 +335,9 @@ static int raw_release(struct socket *sock)
 	ro->ifindex = 0;
 	ro->bound   = 0;
 	ro->count   = 0;
+
+	sock_orphan(sk);
+	sock->sk = NULL;
 
 	release_sock(sk);
 	sock_put(sk);
@@ -405,8 +438,13 @@ static int raw_getname(struct socket *sock, struct sockaddr *uaddr,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32)
+static int raw_setsockopt(struct socket *sock, int level, int optname,
+			  char __user *optval, unsigned int optlen)
+#else
 static int raw_setsockopt(struct socket *sock, int level, int optname,
 			  char __user *optval, int optlen)
+#endif
 {
 	struct sock *sk = sock->sk;
 	struct raw_sock *ro = raw_sk(sk);
@@ -726,6 +764,7 @@ static struct proto_ops raw_ops __read_mostly = {
 	.sendpage      = sock_no_sendpage,
 };
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 static struct proto raw_proto __read_mostly = {
 	.name       = "CAN_RAW",
 	.owner      = THIS_MODULE,
@@ -740,6 +779,17 @@ static struct can_proto raw_can_proto __read_mostly = {
 	.ops        = &raw_ops,
 	.prot       = &raw_proto,
 };
+#else
+static struct can_proto raw_can_proto __read_mostly = {
+	.type       = SOCK_RAW,
+	.protocol   = CAN_RAW,
+	.capability = -1,
+	.ops        = &raw_ops,
+	.owner      = THIS_MODULE,
+	.obj_size   = sizeof(struct raw_sock),
+	.init       = raw_init,
+};
+#endif
 
 static __init int raw_module_init(void)
 {

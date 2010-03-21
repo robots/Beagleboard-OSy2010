@@ -10,3 +10,9 @@ can-raw-objs		:= raw.o
 
 obj-$(CONFIG_CAN_BCM)	+= can-bcm.o
 can-bcm-objs		:= bcm.o
+
+obj-$(CONFIG_CAN_ISOTP)	+= can-isotp.o
+can-isotp-objs		:= isotp.o
+
+obj-$(CONFIG_CAN_GW)	+= can-gw.o
+can-gw-objs		:= gw.o

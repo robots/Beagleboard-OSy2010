@@ -1,4 +1,6 @@
 /*
+ * $Id: dev.c 542 2007-11-07 13:57:16Z thuermann $
+ *
  * Copyright (C) 2007 Wolfgang Grandegger <wg@grandegger.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,5 +22,6 @@
 
 void can_create_sysfs(struct net_device *dev);
 void can_remove_sysfs(struct net_device *dev);
+int can_sample_point(struct can_bittiming *bt);
 
 #endif /* CAN_SYSFS_H */

@@ -1,7 +1,9 @@
 /*
- * linux/can/core.h
+ * socketcan/can/core.h
  *
  * Protoypes and definitions for CAN protocol modules using the PF_CAN core
+ *
+ * $Id: core.h 1038 2009-08-21 10:00:21Z hartkopp $
  *
  * Authors: Oliver Hartkopp <oliver.hartkopp@volkswagen.de>
  *          Urs Thuermann   <urs.thuermann@volkswagen.de>
@@ -15,7 +17,7 @@
 #ifndef CAN_CORE_H
 #define CAN_CORE_H
 
-#include <linux/can.h>
+#include <socketcan/can.h>
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
 
@@ -41,7 +43,13 @@ struct can_proto {
 	int              protocol;
 	int              capability;
 	struct proto_ops *ops;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	struct proto     *prot;
+#else
+	struct module    *owner;
+	int              (*init)(struct sock *sk);
+	size_t           obj_size;
+#endif
 };
 
 /* function prototypes for the CAN networklayer core (af_can.c) */

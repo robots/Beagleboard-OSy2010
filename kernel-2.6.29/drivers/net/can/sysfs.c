@@ -1,4 +1,6 @@
 /*
+ * $Id: dev.c 542 2007-11-07 13:57:16Z thuermann $
+ *
  * Copyright (C) 2007-2008 Wolfgang Grandegger <wg@grandegger.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,15 +19,39 @@
 
 #include <linux/capability.h>
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/netdevice.h>
 #include <linux/if_arp.h>
 #include <net/sock.h>
 #include <linux/rtnetlink.h>
 
-#include <linux/can.h>
-#include <linux/can/dev.h>
+#include <socketcan/can.h>
+#include <socketcan/can/dev.h>
 
 #include "sysfs.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
+int strict_strtoul(const char *cp, unsigned int base, unsigned long *res)
+{
+	char *tail;
+	unsigned long val;
+	size_t len;
+
+	*res = 0;
+	len = strlen(cp);
+	if (len == 0)
+		return -EINVAL;
+
+	val = simple_strtoul(cp, &tail, base);
+	if ((*tail == '\0') ||
+		((len == (size_t)(tail - cp) + 1) && (*tail == '\n'))) {
+		*res = val;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+#endif
 
 #ifdef CONFIG_SYSFS
 
@@ -108,18 +134,13 @@ CAN_DEV_SHOW(ctrlmode, "0x%x\n");
 static int change_can_ctrlmode(struct net_device *dev, unsigned long ctrlmode)
 {
 	struct can_priv *priv = netdev_priv(dev);
-	int err = 0;
 
 	if (priv->state != CAN_STATE_STOPPED)
 		return -EBUSY;
 
-	if (priv->do_set_ctrlmode)
-		err = priv->do_set_ctrlmode(dev, ctrlmode);
+	priv->ctrlmode = ctrlmode;
 
-	if (!err)
-		priv->ctrlmode = ctrlmode;
-
-	return err;
+	return 0;
 }
 
 static ssize_t store_can_ctrlmode(struct device *dev,
@@ -174,6 +195,8 @@ static int change_can_restart_ms(struct net_device *dev, unsigned long ms)
 
 	if (priv->restart_ms < 0)
 		return -EOPNOTSUPP;
+	if (priv->state != CAN_STATE_STOPPED)
+		return -EBUSY;
 	priv->restart_ms = ms;
 	return 0;
 }
@@ -344,16 +367,20 @@ out:
 	return ret;
 }
 
-#define CAN_BT_ENTRY_RO(name)						\
-static ssize_t show_##name(struct device *d,				\
-			   struct device_attribute *attr, char *buf) 	\
-{									\
-	return can_bt_show(d, attr, buf,				\
-			   offsetof(struct can_bittiming, name));	\
-}									\
-static DEVICE_ATTR(hw_##name, S_IRUGO, show_##name, NULL)
+static ssize_t fmt_can_clock(struct net_device *dev, char *buf)
+{
+	struct can_priv *priv = netdev_priv(dev);
 
-CAN_BT_ENTRY_RO(clock);
+	return sprintf(buf, "%d\n", priv->clock.freq);
+}
+
+static ssize_t show_can_clock(struct device *d,
+			      struct device_attribute *attr,
+			      char *buf)
+{
+	return can_dev_show(d, attr, buf, fmt_can_clock);
+}
+static DEVICE_ATTR(hw_clock, S_IRUGO, show_can_clock, NULL);
 
 #define CAN_BT_ENTRY(name)						\
 static ssize_t show_##name(struct device *d,				\
@@ -399,6 +426,12 @@ static struct attribute *can_bittiming_attrs[] = {
 	NULL
 };
 
+/* Minimal number of attributes to support intelligent CAN controllers */
+static struct attribute *can_bittiming_min_attrs[] = {
+	&dev_attr_bitrate.attr,
+	NULL
+};
+
 static struct attribute_group can_bittiming_group = {
 	.name = "can_bittiming",
 	.attrs = can_bittiming_attrs,
@@ -419,8 +452,8 @@ static ssize_t can_stat_show(const struct device *d,
 
 	read_lock(&dev_base_lock);
 	if (dev_isalive(dev))
-		ret = sprintf(buf, "%ld\n",
-			      *(unsigned long *)(((u8 *)stats) + offset));
+		ret = sprintf(buf, "%d\n",
+			      *(u32 *)(((u8 *)stats) + offset));
 
 	read_unlock(&dev_base_lock);
 	return ret;
@@ -438,19 +471,17 @@ static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL)
 
 CAN_STAT_ENTRY(error_warning);
 CAN_STAT_ENTRY(error_passive);
+CAN_STAT_ENTRY(bus_off);
 CAN_STAT_ENTRY(bus_error);
 CAN_STAT_ENTRY(arbitration_lost);
-CAN_STAT_ENTRY(data_overrun);
-CAN_STAT_ENTRY(wakeup);
 CAN_STAT_ENTRY(restarts);
 
 static struct attribute *can_statistics_attrs[] = {
 	&dev_attr_error_warning.attr,
 	&dev_attr_error_passive.attr,
+	&dev_attr_bus_off.attr,
 	&dev_attr_bus_error.attr,
 	&dev_attr_arbitration_lost.attr,
-	&dev_attr_data_overrun.attr,
-	&dev_attr_wakeup.attr,
 	&dev_attr_restarts.attr,
 	NULL
 };
@@ -478,13 +509,12 @@ void can_create_sysfs(struct net_device *dev)
 		       "couldn't create sysfs group for CAN statistics\n");
 	}
 
-	if (priv->bittiming_const) {
-		err = sysfs_create_group(&(dev->dev.kobj),
-					 &can_bittiming_group);
-		if (err) {
-			printk(KERN_EMERG "couldn't create sysfs "
-			       "group for CAN bittiming\n");
-		}
+	if (!priv->bittiming_const)
+		can_bittiming_group.attrs = can_bittiming_min_attrs;
+	err = sysfs_create_group(&(dev->dev.kobj), &can_bittiming_group);
+	if (err) {
+		printk(KERN_EMERG "couldn't create sysfs "
+		       "group for CAN bittiming\n");
 	}
 }
 

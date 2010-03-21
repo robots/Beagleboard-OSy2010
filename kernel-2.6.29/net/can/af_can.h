@@ -1,4 +1,6 @@
 /*
+ * $Id: af_can.h 1038 2009-08-21 10:00:21Z hartkopp $
+ *
  * Copyright (c) 2002-2007 Volkswagen Group Electronic Research
  * All rights reserved.
  *
@@ -46,7 +48,7 @@
 #include <linux/netdevice.h>
 #include <linux/list.h>
 #include <linux/rcupdate.h>
-#include <linux/can.h>
+#include <socketcan/can.h>
 
 /* af_can rx dispatcher structures */
 

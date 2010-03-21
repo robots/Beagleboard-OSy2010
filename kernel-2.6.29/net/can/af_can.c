@@ -43,25 +43,38 @@
  */
 
 #include <linux/module.h>
+#include <linux/version.h>
 #include <linux/init.h>
 #include <linux/kmod.h>
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18)
 #include <linux/uaccess.h>
+#else
+#include <asm/uaccess.h>
+#endif
 #include <linux/net.h>
 #include <linux/netdevice.h>
 #include <linux/socket.h>
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
 #include <linux/skbuff.h>
-#include <linux/can.h>
-#include <linux/can/core.h>
+#include <socketcan/can.h>
+#include <socketcan/can/core.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 #include <net/net_namespace.h>
+#endif
 #include <net/sock.h>
 
 #include "af_can.h"
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
+#include "compat.h"
+#endif
+
+#include <socketcan/can/version.h> /* for RCSID. Removed by mkpatch script */
+RCSID("$Id: af_can.c 1122 2010-02-03 17:55:16Z hartkopp $");
 
 static __initdata const char banner[] = KERN_INFO
 	"can: controller area network core (" CAN_VERSION_STRING ")\n";
@@ -81,7 +94,11 @@ HLIST_HEAD(can_rx_dev_list);
 static struct dev_rcv_lists can_rx_alldev_list;
 static DEFINE_SPINLOCK(can_rcvlists_lock);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
 static struct kmem_cache *rcv_cache __read_mostly;
+#else
+static kmem_cache_t *rcv_cache;
+#endif
 
 /* table of registered CAN protocols */
 static struct can_proto *proto_tab[CAN_NPROTO] __read_mostly;
@@ -105,16 +122,30 @@ static int can_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 		return sock_get_timestamp(sk, (struct timeval __user *)arg);
 
 	default:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16)
 		return -ENOIOCTLCMD;
+#else
+		return dev_ioctl(cmd, (void __user *)arg);
+#endif
 	}
 }
 
 static void can_sock_destruct(struct sock *sk)
 {
 	skb_queue_purge(&sk->sk_receive_queue);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,12)
+	if (sk->sk_protinfo)
+		kfree(sk->sk_protinfo);
+#endif
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+static int can_create(struct net *net, struct socket *sock, int protocol, int kern)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 static int can_create(struct net *net, struct socket *sock, int protocol)
+#else
+static int can_create(struct socket *sock, int protocol)
+#endif
 {
 	struct sock *sk;
 	struct can_proto *cp;
@@ -125,8 +156,10 @@ static int can_create(struct net *net, struct socket *sock, int protocol)
 	if (protocol < 0 || protocol >= CAN_NPROTO)
 		return -EINVAL;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 	if (net != &init_net)
 		return -EAFNOSUPPORT;
+#endif
 
 #ifdef CONFIG_MODULES
 	/* try to load protocol module kernel is modular */
@@ -146,8 +179,13 @@ static int can_create(struct net *net, struct socket *sock, int protocol)
 
 	spin_lock(&proto_tab_lock);
 	cp = proto_tab[protocol];
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	if (cp && !try_module_get(cp->prot->owner))
 		cp = NULL;
+#else
+	if (cp && !try_module_get(cp->owner))
+		cp = NULL;
+#endif
 	spin_unlock(&proto_tab_lock);
 
 	/* check for available protocol and correct usage */
@@ -167,17 +205,40 @@ static int can_create(struct net *net, struct socket *sock, int protocol)
 
 	sock->ops = cp->ops;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 	sk = sk_alloc(net, PF_CAN, GFP_KERNEL, cp->prot);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
+	sk = sk_alloc(PF_CAN, GFP_KERNEL, cp->prot, 1);
+#else
+	sk = sk_alloc(PF_CAN, GFP_KERNEL, 1, 0);
+#endif
 	if (!sk) {
 		err = -ENOMEM;
 		goto errout;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,12)
+	if (cp->obj_size) {
+		sk->sk_protinfo = kmalloc(cp->obj_size, GFP_KERNEL);
+		if (!sk->sk_protinfo) {
+			sk_free(sk);
+			err = -ENOMEM;
+			goto errout;
+		}
+	}
+	sk_set_owner(sk, proto_tab[protocol]->owner);
+#endif
+
 	sock_init_data(sock, sk);
 	sk->sk_destruct = can_sock_destruct;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	if (sk->sk_prot->init)
 		err = sk->sk_prot->init(sk);
+#else
+	if (cp->init)
+		err = cp->init(sk);
+#endif
 
 	if (err) {
 		/* release sk on errors */
@@ -186,7 +247,11 @@ static int can_create(struct net *net, struct socket *sock, int protocol)
 	}
 
  errout:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	module_put(cp->prot->owner);
+#else
+	module_put(cp->owner);
+#endif
 	return err;
 }
 
@@ -198,6 +263,8 @@ static int can_create(struct net *net, struct socket *sock, int protocol)
  * can_send - transmit a CAN frame (optional with local loopback)
  * @skb: pointer to socket buffer with CAN frame in data section
  * @loop: loopback for listeners on local CAN sockets (recommended default!)
+ *
+ * Due to the loopback this routine must not be called from hardirq context.
  *
  * Return:
  *  0 on success
@@ -229,8 +296,13 @@ int can_send(struct sk_buff *skb, int loop)
 	}
 
 	skb->protocol = htons(ETH_P_CAN);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22)
 	skb_reset_network_header(skb);
 	skb_reset_transport_header(skb);
+#else
+	skb->nh.raw = skb->data;
+	skb->h.raw  = skb->data;
+#endif
 
 	if (loop) {
 		/* local loopback of sent CAN frames */
@@ -247,6 +319,9 @@ int can_send(struct sk_buff *skb, int loop)
 		 * after each skb_clone() or skb_orphan() usage.
 		 */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
+#define IFF_ECHO IFF_LOOPBACK
+#endif
 		if (!(skb->dev->flags & IFF_ECHO)) {
 			/*
 			 * If the interface is not capable to do loopback
@@ -273,13 +348,18 @@ int can_send(struct sk_buff *skb, int loop)
 		err = net_xmit_errno(err);
 
 	if (err) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)
+		/* kfree_skb() does not check for !NULL on older kernels */
 		if (newskb)
 			kfree_skb(newskb);
+#else
+		kfree_skb(newskb);
+#endif
 		return err;
 	}
 
 	if (newskb)
-		netif_rx(newskb);
+		netif_rx_ni(newskb);
 
 	/* update statistics */
 	can_stats.tx_frames++;
@@ -293,6 +373,26 @@ EXPORT_SYMBOL(can_send);
  * af_can rx path
  */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+static struct dev_rcv_lists *find_dev_rcv_lists(struct net_device *dev)
+{
+	/*
+	 * find receive list for this device
+	 *
+	 * Since 2.6.26 a new "midlevel private" ml_priv pointer has been
+	 * introduced in struct net_device. We use this pointer to omit the
+	 * linear walk through the can_rx_dev_list. A similar speedup has been
+	 * queued for 2.6.34 mainline but using the new netdev_rcu lists.
+	 * Therefore the can_rx_dev_list is still needed (e.g. in proc.c)
+	 */
+
+	/* dev == NULL is the indicator for the 'all' filterlist */
+	if (!dev)
+		return &can_rx_alldev_list;
+	else
+		return (struct dev_rcv_lists *)dev->ml_priv;
+}
+#else
 static struct dev_rcv_lists *find_dev_rcv_lists(struct net_device *dev)
 {
 	struct dev_rcv_lists *d = NULL;
@@ -318,6 +418,7 @@ static struct dev_rcv_lists *find_dev_rcv_lists(struct net_device *dev)
 
 	return n ? d : NULL;
 }
+#endif
 
 /**
  * find_rcv_list - determine optimal filterlist inside device filter struct
@@ -436,6 +537,11 @@ int can_rx_register(struct net_device *dev, canid_t can_id, canid_t mask,
 
 	/* insert new receiver  (dev,canid,mask) -> (func,data) */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+	if (dev && dev->type != ARPHRD_CAN)
+		return -ENODEV;
+#endif
+
 	r = kmem_cache_alloc(rcv_cache, GFP_KERNEL);
 	if (!r)
 		return -ENOMEM;
@@ -509,6 +615,11 @@ void can_rx_unregister(struct net_device *dev, canid_t can_id, canid_t mask,
 	struct hlist_node *next;
 	struct dev_rcv_lists *d;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+	if (dev && dev->type != ARPHRD_CAN)
+		return;
+#endif
+
 	spin_lock(&can_rcvlists_lock);
 
 	d = find_dev_rcv_lists(dev);
@@ -555,9 +666,12 @@ void can_rx_unregister(struct net_device *dev, canid_t can_id, canid_t mask,
 		can_pstats.rcv_entries--;
 
 	/* remove device structure requested by NETDEV_UNREGISTER */
-	if (d->remove_on_zero_entries && !d->entries)
+	if (d->remove_on_zero_entries && !d->entries) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+		dev->ml_priv = NULL;
+#endif
 		hlist_del_rcu(&d->list);
-	else
+	} else
 		d = NULL;
 
  out:
@@ -645,19 +759,39 @@ static int can_rcv_filter(struct dev_rcv_lists *d, struct sk_buff *skb)
 	return matches;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,14)
 static int can_rcv(struct sk_buff *skb, struct net_device *dev,
 		   struct packet_type *pt, struct net_device *orig_dev)
+#else
+static int can_rcv(struct sk_buff *skb, struct net_device *dev,
+		   struct packet_type *pt)
+#endif
 {
 	struct dev_rcv_lists *d;
 	struct can_frame *cf = (struct can_frame *)skb->data;
 	int matches;
 
-	if (dev->type != ARPHRD_CAN || !net_eq(dev_net(dev), &init_net)) {
-		kfree_skb(skb);
-		return 0;
-	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+	if (!net_eq(dev_net(dev), &init_net))
+		goto drop;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
+	if (dev->nd_net != &init_net)
+		goto drop;
+#endif
 
-	BUG_ON(skb->len != sizeof(struct can_frame) || cf->can_dlc > 8);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)
+	if (WARN_ONCE(dev->type != ARPHRD_CAN ||
+		      skb->len != sizeof(struct can_frame) ||
+		      cf->can_dlc > 8,
+		      "PF_CAN: dropped non conform skbuf: "
+		      "dev type %d, len %d, can_dlc %d\n",
+		      dev->type, skb->len, cf->can_dlc))
+		goto drop;
+#else
+	BUG_ON(dev->type != ARPHRD_CAN ||
+	       skb->len != sizeof(struct can_frame) ||
+	       cf->can_dlc > 8);
+#endif
 
 	/* update statistics */
 	can_stats.rx_frames++;
@@ -675,15 +809,25 @@ static int can_rcv(struct sk_buff *skb, struct net_device *dev,
 
 	rcu_read_unlock();
 
-	/* free the skbuff allocated by the netdevice driver */
+	/* consume the skbuff allocated by the netdevice driver */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30)
+	consume_skb(skb);
+#else
 	kfree_skb(skb);
+#endif
 
 	if (matches > 0) {
 		can_stats.matches++;
 		can_stats.matches_delta++;
 	}
 
-	return 0;
+	return NET_RX_SUCCESS;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
+drop:
+	kfree_skb(skb);
+	return NET_RX_DROP;
+#endif
 }
 
 /*
@@ -711,9 +855,11 @@ int can_proto_register(struct can_proto *cp)
 		return -EINVAL;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	err = proto_register(cp->prot, 0);
 	if (err < 0)
 		return err;
+#endif
 
 	spin_lock(&proto_tab_lock);
 	if (proto_tab[proto]) {
@@ -729,8 +875,10 @@ int can_proto_register(struct can_proto *cp)
 	}
 	spin_unlock(&proto_tab_lock);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	if (err < 0)
 		proto_unregister(cp->prot);
+#endif
 
 	return err;
 }
@@ -752,7 +900,9 @@ void can_proto_unregister(struct can_proto *cp)
 	proto_tab[proto] = NULL;
 	spin_unlock(&proto_tab_lock);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 	proto_unregister(cp->prot);
+#endif
 }
 EXPORT_SYMBOL(can_proto_unregister);
 
@@ -765,8 +915,13 @@ static int can_notifier(struct notifier_block *nb, unsigned long msg,
 	struct net_device *dev = (struct net_device *)data;
 	struct dev_rcv_lists *d;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
 	if (!net_eq(dev_net(dev), &init_net))
 		return NOTIFY_DONE;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
+	if (dev->nd_net != &init_net)
+		return NOTIFY_DONE;
+#endif
 
 	if (dev->type != ARPHRD_CAN)
 		return NOTIFY_DONE;
@@ -793,6 +948,10 @@ static int can_notifier(struct notifier_block *nb, unsigned long msg,
 		d->dev = dev;
 
 		spin_lock(&can_rcvlists_lock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+		BUG_ON(dev->ml_priv);
+		dev->ml_priv = d;
+#endif
 		hlist_add_head_rcu(&d->list, &can_rx_dev_list);
 		spin_unlock(&can_rcvlists_lock);
 
@@ -806,8 +965,12 @@ static int can_notifier(struct notifier_block *nb, unsigned long msg,
 			if (d->entries) {
 				d->remove_on_zero_entries = 1;
 				d = NULL;
-			} else
+			} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+				dev->ml_priv = NULL;
+#endif
 				hlist_del_rcu(&d->list);
+			}
 		} else
 			printk(KERN_ERR "can: notifier: receive list not "
 			       "found for dev %s\n", dev->name);
@@ -828,7 +991,11 @@ static int can_notifier(struct notifier_block *nb, unsigned long msg,
  */
 
 static struct packet_type can_packet __read_mostly = {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30)
+	.type = cpu_to_be16(ETH_P_CAN),
+#else
 	.type = __constant_htons(ETH_P_CAN),
+#endif
 	.dev  = NULL,
 	.func = can_rcv,
 };
@@ -848,8 +1015,13 @@ static __init int can_init(void)
 {
 	printk(banner);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,23)
 	rcv_cache = kmem_cache_create("can_receiver", sizeof(struct receiver),
 				      0, 0, NULL);
+#else
+	rcv_cache = kmem_cache_create("can_receiver", sizeof(struct receiver),
+				      0, 0, NULL, NULL);
+#endif
 	if (!rcv_cache)
 		return -ENOMEM;
 
@@ -900,9 +1072,17 @@ static __exit void can_exit(void)
 	hlist_del(&can_rx_alldev_list.list);
 	hlist_for_each_entry_safe(d, n, next, &can_rx_dev_list, list) {
 		hlist_del(&d->list);
+		BUG_ON(d->entries);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
+		d->dev->ml_priv = NULL;
+#endif
 		kfree(d);
 	}
 	spin_unlock(&can_rcvlists_lock);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,15)
+	rcu_barrier(); /* Wait for completion of call_rcu()'s */
+#endif
 
 	kmem_cache_destroy(rcv_cache);
 }

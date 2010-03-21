@@ -45,6 +45,18 @@ config CAN_DEBUG_DEVICES
 	  a problem with CAN support and want to see more of what is going
 	  on.
 
+config CAN_STM32BB
+	depends on CAN_DEV && SPI
+	tristate "STM32BB"
+	---help---
+		Bla bla
+
+config CAN_MCP251X
+	tristate "Microchip MCP251x SPI CAN controllers"
+	depends on CAN_DEV && SPI
+	---help---
+	  Driver for the Microchip MCP251x SPI CAN controllers.
+
 config CAN_SJA1000
 	depends on CAN_DEV
 	tristate "Philips SJA1000"
