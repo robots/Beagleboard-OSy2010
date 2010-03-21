@@ -47,6 +47,7 @@
 #include <mach/display.h>
 
 #include <linux/spi/spi.h>
+#include <socketcan/can/platform/stm32bb.h>
 
 #include "twl4030-generic-scripts.h"
 #include "mmc-twl4030.h"
@@ -163,10 +164,10 @@ static int beagle_twl_gpio_setup(struct device *dev,
 	/* TWL4030_GPIO_MAX + 0 == ledA, EHCI nEN_USB_PWR (out, active low) */
 	gpio_request(gpio + TWL4030_GPIO_MAX, "nEN_USB_PWR");
 	gpio_direction_output(gpio + TWL4030_GPIO_MAX, 1);
+#endif
 
 	/* TWL4030_GPIO_MAX + 1 == ledB, PMU_STAT (out, active low LED) */
 	gpio_leds[2].gpio = gpio + TWL4030_GPIO_MAX + 1;
-#endif
 	return 0;
 }
 
@@ -319,12 +320,28 @@ static int __init omap3_beagle_i2c_init(void)
 }
 
 /* SPI */
+static int stm32bb_setup(struct spi_device *spi)
+{
+	gpio_request(157, "stm32bb_irq");
+	gpio_direction_input(157);
+	return 0;
+}
+
+static struct stm32bb_platform_data stm32bb_info = {
+	.board_specific_setup	= &stm32bb_setup,
+	.power_enable		= NULL,
+	.transceiver_enable	= NULL,
+};
+
 static struct spi_board_info beagle_spi_board_info[] = {
 	{
-		.modalias	= "spidev",
+		.modalias	= "stm32bb",
+		.platform_data	= &stm32bb_info,
+		.irq		= OMAP_GPIO_IRQ(157),
+		.max_speed_hz	= 4*1000*1000,
 		.chip_select	= 0,
-		.max_speed_hz	= 1*1000*1000,
 		.bus_num	= 3,
+		.mode		= SPI_MODE_0,
 	},
 	{
 		.modalias	= "spidev",
@@ -551,9 +568,6 @@ static void __init omap3_beagle_init(void)
 	gpio_request(141, "enc424j600_irq");
 	gpio_direction_input(157);
 
-	gpio_request(157, "stm32_bb_irq");
-	gpio_direction_input(157);
-	
 	spi_register_board_info(beagle_spi_board_info, 
 				ARRAY_SIZE(beagle_spi_board_info));
 }
