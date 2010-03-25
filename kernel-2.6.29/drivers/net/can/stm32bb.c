@@ -189,16 +189,6 @@ static int stm32bb_spi_trans(struct spi_device *spi, int len)
 	spi_message_add_tail(&t, &m);
 
 	ret = spi_sync(spi, &m);
-/*dev_warn(&spi->dev, "TXbuf: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x \n",
-	priv->spi_tx_buf[0], priv->spi_tx_buf[1], priv->spi_tx_buf[2], priv->spi_tx_buf[3], priv->spi_tx_buf[4],
-	priv->spi_tx_buf[5], priv->spi_tx_buf[6], priv->spi_tx_buf[7], priv->spi_tx_buf[8], priv->spi_tx_buf[9],
-	priv->spi_tx_buf[10], priv->spi_tx_buf[11], priv->spi_tx_buf[12], priv->spi_tx_buf[13], priv->spi_tx_buf[14]
-	);
-dev_warn(&spi->dev, "RXbuf: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x \n",
-	priv->spi_rx_buf[0], priv->spi_rx_buf[1], priv->spi_rx_buf[2], priv->spi_rx_buf[3], priv->spi_rx_buf[4],
-	priv->spi_rx_buf[5], priv->spi_rx_buf[6], priv->spi_rx_buf[7], priv->spi_rx_buf[8], priv->spi_rx_buf[9],
-	priv->spi_rx_buf[10], priv->spi_rx_buf[11], priv->spi_rx_buf[12], priv->spi_rx_buf[13], priv->spi_rx_buf[14]
-	);*/
 	if (ret)
 		dev_err(&spi->dev, "spi transfer failed: ret = %d\n", ret);
 	return ret;
@@ -260,7 +250,6 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 
 	exide = (frame->can_id & CAN_EFF_FLAG) ? 1 : 0; /* Extended ID Enable */
 	rtr = (frame->can_id & CAN_RTR_FLAG) ? 1 : 0; /* Remote transmission */
-//dev_warn(&spi->dev, "Transmittttiing\n");
 
 	mutex_lock(&priv->spi_lock);
 
@@ -268,7 +257,7 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 	priv->spi_tx_buf[1] = 0x00;
 
 	/* write flag */
-	buf[0] = rtr << 4 | exide << 5 | (frame->can_dlc & 0x0f); 	//flags can_dlc je predpokladam data length
+	buf[0] = rtr << 4 | exide << 5 | (frame->can_dlc & 0x0f);
 	/* write ID - LSB first*/
 	buf[1] = frame->can_id & 0xff;
 	buf[2] = (frame->can_id >> 8) & 0xff;
@@ -279,7 +268,7 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 	memcpy(buf + 5, frame->data, frame->can_dlc);
 
 	/* send frame */
-	stm32bb_spi_trans(spi, 2+1+4+8);// 2cmd + 1 flag + 4 id + 8 msg
+	stm32bb_spi_trans(spi, 2+13);// 2 cmd + 13  msg
 	mutex_unlock(&priv->spi_lock);
 }
 
@@ -299,13 +288,12 @@ static void stm32bb_hw_rx(struct spi_device *spi, int rx_idx)
 		priv->net->stats.rx_dropped++;
 		return;
 	}
-//dev_warn(&spi->dev, "RECEIVIiiing\n");
 
 	mutex_lock(&priv->spi_lock);
 
 	priv->spi_tx_buf[0] = (rx_idx==0) ? CAN_RX0 : CAN_RX1;		// vyber buf ktory chceme citat
 	priv->spi_tx_buf[1] = 0x00;
-	stm32bb_spi_trans(spi, 2+1+4+8);// 2cmd + 1 flag + 4 id + 8 msg
+	stm32bb_spi_trans(spi, 2+13);// 2 cmd + 13 msg
 
 	if (buf[0] & CAN_MSG_INV) {
 		mutex_unlock(&priv->spi_lock);
@@ -386,7 +374,6 @@ static void stm32bb_set_normal_mode(struct spi_device *spi)
 	reg = stm32bb_read_reg(spi, SYS_INTE, 2);
 	reg |= SYS_INT_CANTXIF | SYS_INT_CANRX0IF | SYS_INT_CANERRIF;
 	stm32bb_write_reg(spi, SYS_INTE, reg, 2);
-//	stm32bb_read_reg(spi, SYS_INTE, 2);
 
 	reg = stm32bb_read_reg(spi, CAN_CTRL, 2);
 
@@ -436,10 +423,8 @@ static int stm32bb_do_set_bittiming(struct net_device *net)
 	timing_reg |= (bt->brp - 1) & 0x03ff;
 
 	stm32bb_write_reg(spi, CAN_TIMING, timing_reg, 4);
-//	timing_reg = stm32bb_read_reg(spi, CAN_TIMING, 4);
 
 	dev_info(&spi->dev, "Timing  BRP: %d SJW: %d PROP: %d TS1: %d TS2: %d\n", bt->brp, bt->sjw, bt->prop_seg, bt->phase_seg1, bt->phase_seg2);
-//	dev_info(&spi->dev, "Timing_reg: 0x%08x \n", timing_reg);
 
 	return 0;
 }
@@ -475,7 +460,8 @@ static void stm32bb_can_reset(struct spi_device *spi)
 	//int ret;
 	unsigned long timeout;
 
-//	stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_RST, 2);
+	// FIXME - this doesn't work very well
+	//stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_RST, 2);
 
 	/* Wait for reset to finish */
 	mdelay(50);
@@ -528,7 +514,7 @@ static int stm32bb_hw_probe(struct spi_device *spi)
 
 	id = (uint16_t)stm32bb_read_reg(spi, SYS_ID, 2);
 
-//	dev_warn(&spi->dev, "SYS_ID 0x%04x\n", id);
+	dev_info(&spi->dev, "System ID = 0x%04x\n", id);
 
 	/* Check for power up default values */
 	return (id == SYS_ID_MAGIC) ? 1 : 0;
@@ -605,10 +591,9 @@ static void stm32bb_tx_work_handler(struct work_struct *ws)
 
 	if (priv->tx_skb) {
 		frame = (struct can_frame *)priv->tx_skb->data;
-//dev_warn(&spi->dev, "TX: Got frame ! :)\n");
   
 		if (priv->can.state == CAN_STATE_BUS_OFF) {
-dev_warn(&spi->dev, "TX: Bussoff :(\n");
+			dev_warn(&spi->dev, "Trying to transmit while bus-off ! \n");
 			stm32bb_clean(net);
 			netif_wake_queue(net);
 			return;
@@ -622,7 +607,7 @@ dev_warn(&spi->dev, "TX: Bussoff :(\n");
 	}
 }
 
-//TODO tu su este nedorobene veci:)
+//TODO error recovery and PM
 static void stm32bb_irq_work_handler(struct work_struct *ws)
 {
 	struct stm32bb_priv *priv = container_of(ws, struct stm32bb_priv,
@@ -633,7 +618,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 	uint16_t i;
 	int can_id_res = 0;
 
-	// TODO: this is all wrong !
+	// TODO: this probably wrong !
 	// shouldn't this be moved to separate work handler ???
 	if (priv->after_suspend || priv->restart_tx) {
 		mdelay(10);
