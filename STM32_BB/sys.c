@@ -59,6 +59,9 @@ void SYS_ResetHandler(void) {
 	if (SYS_Reset == SYS_RESET_MAGIC) {
 		SYS_Reset = 0x0000;
 
+		// show the world we are down 
+		LED_GREEN(Bit_SET);
+
 		// do reset
 		NVIC_SystemReset();
 	}
