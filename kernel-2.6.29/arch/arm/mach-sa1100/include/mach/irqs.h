@@ -144,6 +144,10 @@
 #define IRQ_LOCOMO_SPI_REND	(IRQ_BOARD_END + 20)
 #define IRQ_LOCOMO_SPI_TEND	(IRQ_BOARD_END + 21)
 
+#ifdef CONFIG_IPIPE
+#define __ipipe_mach_irq_mux_p(irq) ((irq) == IRQ_GPIO11_27)
+#endif /* CONFIG_IPIPE */
+
 /*
  * Figure out the MAX IRQ number.
  *

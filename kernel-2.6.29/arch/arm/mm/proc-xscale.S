@@ -415,9 +415,18 @@ ENTRY(cpu_xscale_dcache_clean_area)
  */
 	.align	5
 ENTRY(cpu_xscale_switch_mm)
+#ifndef CONFIG_ARM_FCSE_GUARANTEED
+#ifdef CONFIG_ARM_FCSE
+	cmp	r2, #0
+	beq	2f
+#endif
 	clean_d_cache r1, r2
 	mcr	p15, 0, ip, c7, c5, 0		@ Invalidate I cache & BTB
 	mcr	p15, 0, ip, c7, c10, 4		@ Drain Write (& Fill) Buffer
+#ifdef CONFIG_ARM_FCSE
+2:
+#endif
+#endif /* CONFIG_ARM_FCSE_GUARANTEED */
 	mcr	p15, 0, r0, c2, c0, 0		@ load page table pointer
 	mcr	p15, 0, ip, c8, c7, 0		@ invalidate I & D TLBs
 	cpwait_ret lr, ip

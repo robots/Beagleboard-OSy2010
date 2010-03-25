@@ -52,7 +52,8 @@ extern struct processor {
 	/*
 	 * Set the page table
 	 */
-	void (*switch_mm)(unsigned long pgd_phys, struct mm_struct *mm);
+	void (*switch_mm)(unsigned long pgd_phys,
+			  struct mm_struct *mm, unsigned cacheflush);
 	/*
 	 * Set a possibly extended PTE.  Non-extended PTEs should
 	 * ignore 'ext'.
@@ -66,4 +67,4 @@ extern struct processor {
 #define cpu_do_idle()			processor._do_idle()
 #define cpu_dcache_clean_area(addr,sz)	processor.dcache_clean_area(addr,sz)
 #define cpu_set_pte_ext(ptep,pte,ext)	processor.set_pte_ext(ptep,pte,ext)
-#define cpu_do_switch_mm(pgd,mm)	processor.switch_mm(pgd,mm)
+#define cpu_do_switch_mm(pgd, mm, flush) processor.switch_mm(pgd, mm, flush)

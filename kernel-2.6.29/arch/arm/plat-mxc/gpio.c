@@ -25,6 +25,13 @@
 #include <linux/gpio.h>
 #include <mach/hardware.h>
 #include <asm-generic/bug.h>
+#ifdef CONFIG_IPIPE
+#include <asm/ipipe.h>
+#ifdef CONFIG_MACH_MX31ADS
+#include <mach/iomux-mx3.h>
+#include <mach/board-mx31ads.h>
+#endif /* CONFIG_MACH_MX31ADS */
+#endif /* CONFIG_IPIPE */
 
 static struct mxc_gpio_port *mxc_gpio_ports;
 static int gpio_table_size;
@@ -127,7 +134,37 @@ static void mx3_gpio_irq_handler(u32 irq, struct irq_desc *desc)
 	BUG_ON(!irq_stat);
 	mxc_gpio_irq_handler(port, irq_stat);
 }
-#endif
+
+#ifdef CONFIG_IPIPE
+void __ipipe_mach_demux_irq(unsigned irq, struct pt_regs *regs)
+{
+	struct mxc_gpio_port *port = (struct mxc_gpio_port *)get_irq_data(irq);
+	u32 irq_stat, gpio_irq_no;
+
+	irq_stat = __raw_readl(port->base + GPIO_ISR) &
+			__raw_readl(port->base + GPIO_IMR);
+	BUG_ON(!irq_stat);
+
+	gpio_irq_no = port->virtual_irq_start;
+
+	for (; irq_stat != 0; irq_stat >>= 1, gpio_irq_no++) {
+                if ((irq_stat & 1) == 0)
+                        continue;
+
+#ifdef CONFIG_MACH_MX31ADS
+		if (gpio_irq_no == EXPIO_PARENT_INT) {
+			extern void mx31ads_demux_expio(u32,
+							struct pt_regs *regs);
+			mx31ads_demux_expio(gpio_irq_no, regs);
+			continue;
+		}
+#endif /* CONFIG_MACH_MX31ADS */
+
+		__ipipe_handle_irq(gpio_irq_no, regs);
+        }
+}
+#endif /* CONFIG_IPIPE */
+#endif /* CONFIG_ARCH_MX3 */
 
 #ifdef CONFIG_ARCH_MX2
 /* MX2 has one interrupt *for all* gpio ports */
@@ -148,7 +185,33 @@ static void mx2_gpio_irq_handler(u32 irq, struct irq_desc *desc)
 			mxc_gpio_irq_handler(&port[i], irq_stat);
 	}
 }
-#endif
+
+#ifdef CONFIG_IPIPE
+void __ipipe_mach_demux_irq(unsigned irq, struct pt_regs *regs)
+{
+	struct mxc_gpio_port *port = (struct mxc_gpio_port *)get_irq_data(irq);
+	u32 irq_msk, irq_stat, gpio_irq_no;
+	int i;
+
+	for (i = 0; i < gpio_table_size; i++) {
+		irq_msk = __raw_readl(port->base + GPIO_IMR);
+		if (!irq_msk)
+			continue;
+
+		irq_stat = __raw_readl(port->base + GPIO_ISR) & irq_msk;
+
+		gpio_irq_no = port[i].virtual_irq_start;
+
+		for (; irq_stat != 0; irq_stat >>= 1, gpio_irq_no++) {
+			if ((irq_stat & 1) == 0)
+				continue;
+
+			__ipipe_handle_irq(gpio_irq_no, regs);
+		}
+	}
+}
+#endif /* CONFIG_IPIPE */
+#endif /* CONFIG_ARCH_MX2 */
 
 static struct irq_chip gpio_irq_chip = {
 	.ack = gpio_ack_irq,
@@ -222,7 +285,11 @@ int __init mxc_gpio_init(struct mxc_gpio_port *port, int cnt)
 		for (j = port[i].virtual_irq_start;
 			j < port[i].virtual_irq_start + 32; j++) {
 			set_irq_chip(j, &gpio_irq_chip);
+#ifndef CONFIG_IPIPE
 			set_irq_handler(j, handle_edge_irq);
+#else /* CONFIG_IPIPE */
+			set_irq_handler(j, handle_level_irq);
+#endif /* CONFIG_IPIPE */
 			set_irq_flags(j, IRQF_VALID);
 		}
 

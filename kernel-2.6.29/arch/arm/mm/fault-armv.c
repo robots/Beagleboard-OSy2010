@@ -25,6 +25,57 @@
 
 static unsigned long shared_pte_mask = L_PTE_MT_BUFFERABLE;
 
+#ifdef CONFIG_ARM_FCSE_BEST_EFFORT
+static void fcse_set_pte_shared(struct vm_area_struct *vma,
+				unsigned long address)
+{
+	pgd_t *pgd;
+	pmd_t *pmd;
+	pte_t *pte, entry;
+
+	if (!(vma->vm_flags & VM_MAYSHARE) || address >= TASK_SIZE)
+		return;
+
+	pgd = pgd_offset(vma->vm_mm, address);
+	if (pgd_none(*pgd))
+		goto no_pgd;
+	if (pgd_bad(*pgd))
+		goto bad_pgd;
+
+	pmd = pmd_offset(pgd, address);
+	if (pmd_none(*pmd))
+		goto no_pmd;
+	if (pmd_bad(*pmd))
+		goto bad_pmd;
+
+	pte = pte_offset_map(pmd, address);
+	entry = *pte;
+
+	if((pte_val(entry)
+	    & (L_PTE_PRESENT | L_PTE_CACHEABLE | L_PTE_WRITE | L_PTE_DIRTY))
+	   == (L_PTE_PRESENT | L_PTE_CACHEABLE | L_PTE_WRITE | L_PTE_DIRTY)) {
+		pte_val(entry) |= L_PTE_SHARED;
+		set_pte_at(vma->vm_mm, address, pte, entry);
+	}
+	pte_unmap(pte);
+	return;
+
+bad_pgd:
+	pgd_ERROR(*pgd);
+	pgd_clear(pgd);
+no_pgd:
+	return;
+
+bad_pmd:
+	pmd_ERROR(*pmd);
+	pmd_clear(pmd);
+no_pmd:
+	return;
+}
+#else /* !CONFIG_ARM_FCSE_BEST_EFFORT */
+#define fcse_set_pte_shared(vma, addr) do { } while (0)
+#endif /* !CONFIG_ARM_FCSE_BEST_EFFORT */
+
 /*
  * We take the easy way out of this problem - we make the
  * PTE uncacheable.  However, we leave the write buffer on.
@@ -94,6 +145,7 @@ no_pmd:
 static void
 make_coherent(struct address_space *mapping, struct vm_area_struct *vma, unsigned long addr, unsigned long pfn)
 {
+#ifndef CONFIG_ARM_FCSE_GUARANTEED
 	struct mm_struct *mm = vma->vm_mm;
 	struct vm_area_struct *mpnt;
 	struct prio_tree_iter iter;
@@ -125,8 +177,14 @@ make_coherent(struct address_space *mapping, struct vm_area_struct *vma, unsigne
 	flush_dcache_mmap_unlock(mapping);
 	if (aliases)
 		adjust_pte(vma, addr);
-	else
+	else {
+		fcse_set_pte_shared(vma, addr);
 		flush_cache_page(vma, addr, pfn);
+	}
+#else /* CONFIG_ARM_FCSE_GUARANTEED */
+	if (vma->vm_flags & VM_MAYSHARE)
+		adjust_pte(vma, addr);
+#endif /* CONFIG_ARM_FCSE_GUARANTEED */
 }
 
 /*

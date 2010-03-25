@@ -321,6 +321,7 @@ __arm_ioremap_pfn(unsigned long pfn, unsigned long offset, size_t size,
  	}
 
 	flush_cache_vmap(addr, addr + size);
+	__ipipe_pin_range_globally(addr, addr + size);
 	return (void __iomem *) (offset + addr);
 }
 EXPORT_SYMBOL(__arm_ioremap_pfn);

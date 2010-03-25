@@ -8,6 +8,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/ipipe_trace.h>
 #include <linux/spinlock.h>
 #include <linux/tty.h>
 #include <linux/wait.h>
@@ -24,6 +25,7 @@ void __attribute__((weak)) bust_spinlocks(int yes)
 		unblank_screen();
 #endif
 		console_unblank();
+  		ipipe_trace_panic_dump();
 		if (--oops_in_progress == 0)
 			wake_up_klogd();
 	}

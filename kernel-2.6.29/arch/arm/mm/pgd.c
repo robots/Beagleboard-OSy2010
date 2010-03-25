@@ -18,6 +18,41 @@
 
 #define FIRST_KERNEL_PGD_NR	(FIRST_USER_PGD_NR + USER_PTRS_PER_PGD)
 
+#ifdef CONFIG_IPIPE
+/* Copied from arch/i386/mm/pgdtable.c, maintains the list of pgds for the
+   implementation of ipipe_pin_range_globally in arch/arm/mm/fault.c. */
+DEFINE_SPINLOCK(pgd_lock);
+struct page *pgd_list;
+
+#define pgd_list_lock(flags) spin_lock_irqsave(&pgd_lock, flags)
+#define pgd_list_unlock(flags) spin_unlock_irqrestore(&pgd_lock, flags)
+
+static inline void pgd_list_add(pgd_t *pgd)
+{
+	struct page *page = virt_to_page(pgd);
+	page->index = (unsigned long)pgd_list;
+	if (pgd_list)
+		set_page_private(pgd_list, (unsigned long)&page->index);
+	pgd_list = page;
+	set_page_private(page, (unsigned long)&pgd_list);
+}
+
+static inline void pgd_list_del(pgd_t *pgd)
+{
+	struct page *next, **pprev, *page = virt_to_page(pgd);
+	next = (struct page *)page->index;
+	pprev = (struct page **)page_private(page);
+	*pprev = next;
+	if (next)
+		set_page_private(next, (unsigned long)pprev);
+}
+#else /* !CONFIG_IPIPE */
+#define pgd_list_lock(flags) ((void) (flags))
+#define pgd_list_unlock(flags) ((void) (flags))
+#define pgd_list_add(pgd) do { } while (0)
+#define pgd_list_del(pgd) do { } while (0)
+#endif /* !CONFIG_IPIPE */
+
 /*
  * need to get a 16k page for level 1
  */
@@ -26,6 +61,7 @@ pgd_t *get_pgd_slow(struct mm_struct *mm)
 	pgd_t *new_pgd, *init_pgd;
 	pmd_t *new_pmd, *init_pmd;
 	pte_t *new_pte, *init_pte;
+	unsigned long flags;
 
 	new_pgd = (pgd_t *)__get_free_pages(GFP_KERNEL, 2);
 	if (!new_pgd)
@@ -37,8 +73,11 @@ pgd_t *get_pgd_slow(struct mm_struct *mm)
 	 * Copy over the kernel and IO PGD entries
 	 */
 	init_pgd = pgd_offset_k(0);
+	pgd_list_lock(flags);
 	memcpy(new_pgd + FIRST_KERNEL_PGD_NR, init_pgd + FIRST_KERNEL_PGD_NR,
 		       (PTRS_PER_PGD - FIRST_KERNEL_PGD_NR) * sizeof(pgd_t));
+	pgd_list_add(new_pgd);
+	pgd_list_unlock(flags);
 
 	clean_dcache_area(new_pgd, PTRS_PER_PGD * sizeof(pgd_t));
 
@@ -47,6 +86,10 @@ pgd_t *get_pgd_slow(struct mm_struct *mm)
 		 * On ARM, first page must always be allocated since it
 		 * contains the machine vectors.
 		 */
+#ifdef CONFIG_ARM_FCSE
+		/* FCSE does not work without high vectors. */
+		BUG();
+#endif /* CONFIG_ARM_FCSE */
 		new_pmd = pmd_alloc(mm, new_pgd, 0);
 		if (!new_pmd)
 			goto no_pmd;
@@ -74,6 +117,7 @@ no_pgd:
 
 void free_pgd_slow(struct mm_struct *mm, pgd_t *pgd)
 {
+	unsigned long flags;
 	pmd_t *pmd;
 	pgtable_t pte;
 
@@ -81,7 +125,7 @@ void free_pgd_slow(struct mm_struct *mm, pgd_t *pgd)
 		return;
 
 	/* pgd is always present and good */
-	pmd = pmd_off(pgd, 0);
+	pmd = pmd_off(pgd + pgd_index(fcse_va_to_mva(mm, 0)), 0);
 	if (pmd_none(*pmd))
 		goto free;
 	if (pmd_bad(*pmd)) {
@@ -95,5 +139,8 @@ void free_pgd_slow(struct mm_struct *mm, pgd_t *pgd)
 	pte_free(mm, pte);
 	pmd_free(mm, pmd);
 free:
+	pgd_list_lock(flags);
+	pgd_list_del(pgd);
+	pgd_list_unlock(flags);
 	free_pages((unsigned long) pgd, 2);
 }

@@ -28,7 +28,11 @@
 		teq	\irqstat, #0
 		ldreq	\irqstat, [\base, #(INTEGRATOR_HDR_IC_OFFSET+IRQ_STATUS)]
 		moveq	\irqnr, #IRQ_CIC_START
-
+#ifdef CONFIG_IPIPE
+		tst	\irqstat, #0x00000040			@ check IRQ_TIMERINT1 first
+		movne	\irqnr, #6
+		bne	1003f
+#endif /* CONFIG_IPIPE */
 1001:		tst	\irqstat, #15
 		bne	1002f
 		add	\irqnr, \irqnr, #4

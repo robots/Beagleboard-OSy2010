@@ -15,6 +15,7 @@
 #include <asm/glue.h>
 #include <asm/shmparam.h>
 #include <asm/cachetype.h>
+#include <asm/fcse.h>
 
 #define CACHE_COLOUR(vaddr)	((vaddr & (SHMLBA - 1)) >> PAGE_SHIFT)
 
@@ -318,23 +319,29 @@ static inline void outer_flush_range(unsigned long start, unsigned long end)
 #ifndef CONFIG_CPU_CACHE_VIPT
 static inline void flush_cache_mm(struct mm_struct *mm)
 {
-	if (cpu_isset(smp_processor_id(), mm->cpu_vm_mask))
+	if (cpu_isset(smp_processor_id(), mm->cpu_vm_mask)) {
+		fcse_notify_flush_all();
 		__cpuc_flush_user_all();
+	}
 }
 
 static inline void
 flush_cache_range(struct vm_area_struct *vma, unsigned long start, unsigned long end)
 {
-	if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask))
+	if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask)) {
+		start = fcse_va_to_mva(vma->vm_mm, start);
+		end = fcse_va_to_mva(vma->vm_mm, end);
 		__cpuc_flush_user_range(start & PAGE_MASK, PAGE_ALIGN(end),
 					vma->vm_flags);
+	}
 }
 
 static inline void
 flush_cache_page(struct vm_area_struct *vma, unsigned long user_addr, unsigned long pfn)
 {
 	if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask)) {
-		unsigned long addr = user_addr & PAGE_MASK;
+		unsigned long addr;
+		addr = fcse_va_to_mva(vma->vm_mm, user_addr) & PAGE_MASK;
 		__cpuc_flush_user_range(addr, addr + PAGE_SIZE, vma->vm_flags);
 	}
 }
@@ -365,14 +372,22 @@ extern void flush_ptrace_access(struct vm_area_struct *vma, struct page *page,
  * Harvard caches are synchronised for the user space address range.
  * This is used for the ARM private sys_cacheflush system call.
  */
-#define flush_cache_user_range(vma,start,end) \
-	__cpuc_coherent_user_range((start) & PAGE_MASK, PAGE_ALIGN(end))
+#define flush_cache_user_range(vma, start, end)				\
+	({								\
+		struct mm_struct *_mm = (vma)->vm_mm;			\
+		unsigned long _start, _end;				\
+		_start = fcse_va_to_mva(_mm, start) & PAGE_MASK;	\
+		_end = PAGE_ALIGN(fcse_va_to_mva(_mm, end));		\
+		__cpuc_coherent_user_range(_start, _end);		\
+	})
 
 /*
  * Perform necessary cache operations to ensure that data previously
  * stored within this range of addresses can be executed by the CPU.
  */
-#define flush_icache_range(s,e)		__cpuc_coherent_kern_range(s,e)
+#define flush_icache_range(s,e)						\
+	__cpuc_coherent_kern_range(fcse_va_to_mva(current->mm, (s)),	\
+				   fcse_va_to_mva(current->mm, (e)))
 
 /*
  * Perform necessary cache operations to ensure that the TLB will
@@ -410,7 +425,8 @@ static inline void flush_anon_page(struct vm_area_struct *vma,
 	extern void __flush_anon_page(struct vm_area_struct *vma,
 				struct page *, unsigned long);
 	if (PageAnon(page))
-		__flush_anon_page(vma, page, vmaddr);
+		__flush_anon_page(vma, page,
+				  fcse_va_to_mva(vma->vm_mm, vmaddr));
 }
 
 #define flush_dcache_mmap_lock(mapping) \

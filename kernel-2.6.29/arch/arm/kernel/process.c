@@ -133,8 +133,15 @@ static void default_idle(void)
 		cpu_relax();
 	else {
 		local_irq_disable();
-		if (!need_resched())
+		if (!need_resched()) {
+#ifdef CONFIG_IPIPE
+			__ipipe_unstall_root();
+#ifdef CONFIG_IPIPE_TRACE_IRQSOFF
+			ipipe_trace_end(0x8000000E);
+#endif /* CONFIG_IPIPE_TRACE_IRQSOFF */
+#endif /* CONFIG_IPIPE */
 			arch_idle();
+		}
 		local_irq_enable();
 	}
 }
@@ -161,6 +168,7 @@ void cpu_idle(void)
 
 		if (!idle)
 			idle = default_idle;
+		ipipe_suspend_domain();
 		leds_event(led_idle_start);
 		tick_nohz_stop_sched_tick(1);
 		while (!need_resched())

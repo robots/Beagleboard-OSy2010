@@ -81,6 +81,18 @@
 	.macro	enable_irq
 	cpsie	i
 	.endm
+
+	.macro  disable_irq_cond
+#ifdef CONFIG_IPIPE
+	cpsid	i
+#endif /* CONFIG_IPIPE */
+	.endm
+
+	.macro  enable_irq_cond
+#ifdef CONFIG_IPIPE
+	cpsie	i
+#endif /* CONFIG_IPIPE */
+	.endm
 #else
 	.macro	disable_irq
 	msr	cpsr_c, #PSR_I_BIT | SVC_MODE
@@ -88,6 +100,18 @@
 
 	.macro	enable_irq
 	msr	cpsr_c, #SVC_MODE
+	.endm
+
+	.macro	disable_irq_cond
+#ifdef CONFIG_IPIPE
+	msr	cpsr_c, #PSR_I_BIT | SVC_MODE
+#endif /* CONFIG_IPIPE */
+	.endm
+
+	.macro	enable_irq_cond
+#ifdef CONFIG_IPIPE
+	msr	cpsr_c, #SVC_MODE
+#endif /* CONFIG_IPIPE */
 	.endm
 #endif
 

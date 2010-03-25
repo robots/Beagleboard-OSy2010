@@ -223,12 +223,13 @@
 
 #ifdef CONFIG_MMU
 
-#define cpu_switch_mm(pgd,mm) cpu_do_switch_mm(virt_to_phys(pgd),mm)
+#define cpu_switch_mm(pgd, mm, cacheflush) \
+	cpu_do_switch_mm(virt_to_phys(pgd), mm, (cacheflush))
 
 #define cpu_get_pgd()	\
 	({						\
 		unsigned long pg;			\
-		__asm__("mrc	p15, 0, %0, c2, c0, 0"	\
+		__asm__ __volatile__ ("mrc	p15, 0, %0, c2, c0, 0"	\
 			 : "=r" (pg) : : "cc");		\
 		pg &= ~0x3fff;				\
 		(pgd_t *)phys_to_virt(pg);		\

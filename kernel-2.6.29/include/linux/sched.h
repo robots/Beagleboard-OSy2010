@@ -59,6 +59,7 @@ struct sched_param {
 #include <linux/errno.h>
 #include <linux/nodemask.h>
 #include <linux/mm_types.h>
+#include <linux/ipipe.h>
 
 #include <asm/system.h>
 #include <asm/page.h>
@@ -182,6 +183,13 @@ extern unsigned long long time_sync_thresh;
 /* in tsk->state again */
 #define TASK_DEAD		64
 #define TASK_WAKEKILL		128
+#ifdef CONFIG_IPIPE
+#define TASK_ATOMICSWITCH	512
+#define TASK_NOWAKEUP		1024
+#else  /* !CONFIG_IPIPE */
+#define TASK_ATOMICSWITCH	0
+#define TASK_NOWAKEUP		0
+#endif /* CONFIG_IPIPE */
 
 /* Convenience macros for the sake of set_task_state */
 #define TASK_KILLABLE		(TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
@@ -286,6 +294,15 @@ extern void cpu_init (void);
 extern void trap_init(void);
 extern void update_process_times(int user);
 extern void scheduler_tick(void);
+
+#ifdef CONFIG_IPIPE
+extern void update_root_process_times(struct pt_regs *regs);
+#else  /* !CONFIG_IPIPE */
+static inline void update_root_process_times(struct pt_regs *regs)
+{
+	update_process_times(user_mode(regs));
+}
+#endif /* CONFIG_IPIPE */
 
 extern void sched_show_task(struct task_struct *p);
 
@@ -1376,6 +1393,9 @@ struct task_struct {
 #endif
 	atomic_t fs_excl;	/* holding fs exclusive resources */
 	struct rcu_head rcu;
+#ifdef CONFIG_IPIPE
+	void *ptd[IPIPE_ROOT_NPTDKEYS];
+#endif
 
 	/*
 	 * cache last used pipe for splice
@@ -1607,6 +1627,11 @@ extern cputime_t task_gtime(struct task_struct *p);
 #define PF_EXITING	0x00000004	/* getting shut down */
 #define PF_EXITPIDONE	0x00000008	/* pi exit done on shut down */
 #define PF_VCPU		0x00000010	/* I'm a virtual CPU */
+#ifdef CONFIG_IPIPE
+#define PF_EVNOTIFY	0x00000020	/* Notify other domains about internal events */
+#else
+#define PF_EVNOTIFY	0
+#endif /* CONFIG_IPIPE */
 #define PF_FORKNOEXEC	0x00000040	/* forked but didn't exec */
 #define PF_SUPERPRIV	0x00000100	/* used super-user privileges */
 #define PF_DUMPCORE	0x00000200	/* dumped core */

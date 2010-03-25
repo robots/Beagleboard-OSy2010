@@ -27,11 +27,88 @@
 #include <linux/list.h>
 #include <linux/timer.h>
 #include <linux/io.h>
+#ifdef CONFIG_IPIPE
+#include <linux/ipipe.h>
+#endif /* CONFIG_IPIPE */
 
 #include <mach/hardware.h>
 #include <asm/irq.h>
 
 #include <asm/mach/irq.h>
+
+#include <mach/imx-regs.h>
+
+
+/* Used for IMX INTERRUPT priority: Still Experimental */
+#ifdef CONFIG_IPIPE
+
+static unsigned int imx_default_irq_priority[IMX_IRQS] __initdata = {
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        5, /* Common Sensor Interface */
+        5, /* Multimedia Accelerator MAC */
+        5, /* Multimedia Accelerator */
+        0, /* unused */
+        5, /* MS */
+        4, /* GPIO Port A */
+        4, /* GPIO Port B */
+        4, /* GPIO Port C */
+        5,  /* LCDC */
+        0, /* unused */
+        0, /* unused */
+        7, /* RTC */
+        7, /* RTC */
+        5, /* UART 2 PFerr*/
+        5, /* UART 2 RTS */
+        5, /* UART 2 DTR */
+        5, /* UART 2 UARTC*/
+        5, /* UART 2 Tx*/
+        5, /* UART 2 Rx*/
+        5, /* UART 1 PFerr*/
+        5, /* UART 1 RTS */
+        5, /* UART 1 DTR */
+        5, /* UART 1 UARTC*/
+        5, /* UART 1 Tx*/
+        5, /* UART 1 Rx*/
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        5,/* PWM */
+        5, /* MMC */
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        5, /* I2C */
+        5, /*SPI 2 */
+        5, /*SPI 1 */
+        5, /* SSI Tx*/
+        5, /* SSI Tx Err*/
+        5, /* SSI Rx */
+        5, /* SSI Rx Err*/
+        0, /* unused */
+        5, /* USB0 */
+        5, /* USB1 */
+        5, /* USB2 */
+        5, /* USB3 */
+        5, /* USB4 */
+        5, /* USB5 */
+        5, /* USB6 */
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        0, /* unused */
+        5, /* Timer2 */
+        15, /* Timer1 This is use by IPIPE */
+        12, /* DMA Err */
+        12, /* DMA */
+        4, /* GPIO D */
+        12 /* Watch dog */        /* Advanced Interrupt Controller (IRQ6) */
+};
+#endif
 
 /*
  *
@@ -255,6 +332,9 @@ static struct irq_chip imx_internal_chip = {
 	.name = "MPU",
 	.ack = imx_mask_irq,
 	.mask = imx_mask_irq,
+#ifdef CONFIG_IPIPE
+	.mask_ack = imx_mask_irq,
+#endif /* CONFIG_IPIPE */
 	.unmask = imx_unmask_irq,
 };
 
@@ -265,6 +345,25 @@ static struct irq_chip imx_gpio_chip = {
 	.unmask = imx_gpio_unmask_irq,
 	.set_type = imx_gpio_irq_type,
 };
+
+#ifdef CONFIG_IPIPE
+void __init imx_init_priority(void)
+{
+        unsigned int irq;
+        IMX_PRIO0=0;
+        IMX_PRIO1=0;
+        IMX_PRIO2=0;
+        IMX_PRIO3=0;
+        IMX_PRIO4=0;
+        IMX_PRIO5=0;
+        IMX_PRIO6=0;
+        IMX_PRIO7=0;
+        printk(KERN_INFO "Initializing imx interrupt priorities\n");
+        for (irq = 0; irq < IMX_IRQS; irq++) {
+	        IMX_PRIO(irq)|=((imx_default_irq_priority[irq]&15)<<((irq%8)*4));
+        }
+}
+#endif
 
 void __init
 imx_init_irq(void)
@@ -295,7 +394,9 @@ imx_init_irq(void)
 		set_irq_handler(irq, handle_edge_irq);
 		set_irq_flags(irq, IRQF_VALID);
 	}
-
+#ifdef CONFIG_IPIPE
+	imx_init_priority();
+#endif
 	set_irq_chained_handler(GPIO_INT_PORTA, imx_gpioa_demux_handler);
 	set_irq_chained_handler(GPIO_INT_PORTB, imx_gpiob_demux_handler);
 	set_irq_chained_handler(GPIO_INT_PORTC, imx_gpioc_demux_handler);
@@ -309,3 +410,18 @@ imx_init_irq(void)
 	init_FIQ();
 #endif
 }
+
+#ifdef CONFIG_IPIPE
+void __ipipe_mach_demux_irq(unsigned irq, struct pt_regs *regs)
+{
+        unsigned int i, base, mask;
+
+        /* GPPIOA, GPIOB, GPIOC, GPIOD are INT 11,12,13 and 62 */
+	i = ((irq & 7) - 3);
+	base = (i << 5) + IMX_IRQS;
+
+	/* Get all multiplexed ITs from given GPIO */
+	while ((mask = ISR(i)))
+		__ipipe_handle_irq(base + __ffs(mask), regs);
+}
+#endif /* CONFIG_IPIPE */

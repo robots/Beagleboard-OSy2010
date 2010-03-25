@@ -280,6 +280,7 @@ config DYNAMIC_FTRACE
 	depends on FUNCTION_TRACER
 	depends on HAVE_DYNAMIC_FTRACE
 	depends on DEBUG_KERNEL
+ 	depends on !IPIPE_TRACE_MCOUNT
 	default y
 	help
          This option will modify all the calls to ftrace dynamically

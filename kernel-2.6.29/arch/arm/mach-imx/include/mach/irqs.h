@@ -118,4 +118,17 @@ extern int imx_set_irq_fiq(unsigned int irq, unsigned int type);
 
 #define NR_IRQS (IRQ_GPIOD(32) + 1)
 #define IRQ_GPIO(x)
+
+#ifdef CONFIG_IPIPE
+#define __ipipe_irqbit(irq) (1ULL << (irq))
+
+#define __ipipe_muxed_irqmask (__ipipe_irqbit(GPIO_INT_PORTA) | \
+                               __ipipe_irqbit(GPIO_INT_PORTB) | \
+                               __ipipe_irqbit(GPIO_INT_PORTC) | \
+                               __ipipe_irqbit(GPIO_INT_PORTD))
+
+#define __ipipe_mach_irq_mux_p(irq) (__ipipe_irqbit(irq) \
+                                     & __ipipe_muxed_irqmask)
+#endif /* CONFIG_IPIPE */
+
 #endif

@@ -2286,7 +2286,7 @@ static int try_to_wake_up(struct task_struct *p, unsigned int state, int sync)
 	rq = task_rq_lock(p, &flags);
 	update_rq_clock(rq);
 	old_state = p->state;
-	if (!(old_state & state))
+	if (!(old_state & state) || (old_state & (TASK_NOWAKEUP|TASK_ATOMICSWITCH)))
 		goto out;
 
 	if (p->se.on_rq)
@@ -2639,13 +2639,15 @@ asmlinkage void schedule_tail(struct task_struct *prev)
 #endif
 	if (current->set_child_tid)
 		put_user(task_pid_vnr(current), current->set_child_tid);
+
+ 	ipipe_init_notify(current);
 }
 
 /*
  * context_switch - switch to the new MM and the new
  * thread's register state.
  */
-static inline void
+static inline int
 context_switch(struct rq *rq, struct task_struct *prev,
 	       struct task_struct *next)
 {
@@ -2687,12 +2689,23 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	switch_to(prev, next, prev);
 
 	barrier();
+
+#ifdef CONFIG_IPIPE_DELAYED_ATOMICSW
+	current->state &= ~TASK_ATOMICSWITCH;
+#else
+	prev->state &= ~TASK_ATOMICSWITCH;
+#endif
+	if (task_hijacked(prev))
+		return 1;
+
 	/*
 	 * this_rq must be evaluated again because prev may have moved
 	 * CPUs since it called schedule(), thus the 'rq' on its stack
 	 * frame will be invalid.
 	 */
 	finish_task_switch(this_rq(), prev);
+
+	return 0;
 }
 
 /*
@@ -4441,6 +4454,7 @@ EXPORT_SYMBOL(add_preempt_count);
 
 void __kprobes sub_preempt_count(int val)
 {
+ 	ipipe_check_context(ipipe_root_domain);
 #ifdef CONFIG_DEBUG_PREEMPT
 	/*
 	 * Underflow?
@@ -4489,6 +4503,7 @@ static noinline void __schedule_bug(struct task_struct *prev)
  */
 static inline void schedule_debug(struct task_struct *prev)
 {
+	ipipe_check_context(ipipe_root_domain);
 	/*
 	 * Test if we are atomic. Since do_exit() needs to call into
 	 * schedule() atomically, we ignore that path for now.
@@ -4557,6 +4572,9 @@ need_resched:
 	rcu_qsctr_inc(cpu);
 	prev = rq->curr;
 	switch_count = &prev->nivcsw;
+ 	if (unlikely(prev->state & TASK_ATOMICSWITCH))
+		/* Pop one disable level -- one still remains. */
+		preempt_enable();
 
 	release_kernel_lock(prev);
 need_resched_nonpreemptible:
@@ -4596,15 +4614,18 @@ need_resched_nonpreemptible:
 		rq->curr = next;
 		++*switch_count;
 
-		context_switch(rq, prev, next); /* unlocks the rq */
+		if (context_switch(rq, prev, next)) /* unlocks the rq unless hijacked */
+			return;
 		/*
 		 * the context switch might have flipped the stack from under
 		 * us, hence refresh the local variables.
 		 */
 		cpu = smp_processor_id();
 		rq = cpu_rq(cpu);
-	} else
+	} else {
+		prev->state &= ~TASK_ATOMICSWITCH;
 		spin_unlock_irq(&rq->lock);
+	}
 
 	if (unlikely(reacquire_kernel_lock(current) < 0))
 		goto need_resched_nonpreemptible;
@@ -5362,6 +5383,7 @@ recheck:
 
 	oldprio = p->prio;
 	__setscheduler(rq, p, policy, param->sched_priority);
+  	ipipe_setsched_notify(p);
 
 	if (running)
 		p->sched_class->set_curr_task(rq);
@@ -5709,6 +5731,7 @@ static void __cond_resched(void)
 #ifdef CONFIG_DEBUG_SPINLOCK_SLEEP
 	__might_sleep(__FILE__, __LINE__);
 #endif
+	ipipe_check_context(ipipe_root_domain);
 	/*
 	 * The BKS might be reacquired before we have dropped
 	 * PREEMPT_ACTIVE, which could trigger a second
@@ -9618,3 +9641,60 @@ struct cgroup_subsys cpuacct_subsys = {
 	.subsys_id = cpuacct_subsys_id,
 };
 #endif	/* CONFIG_CGROUP_CPUACCT */
+
+#ifdef CONFIG_IPIPE
+
+int ipipe_setscheduler_root (struct task_struct *p, int policy, int prio)
+{
+	const struct sched_class *prev_class = p->sched_class;
+	int oldprio, on_rq, running;
+	unsigned long flags;
+	struct rq *rq;
+
+	spin_lock_irqsave(&p->pi_lock, flags);
+	rq = __task_rq_lock(p);
+	update_rq_clock(rq);
+	on_rq = p->se.on_rq;
+	running = task_running(rq, p);
+
+	if (on_rq)
+		deactivate_task(rq, p, 0);
+	if (running)
+		p->sched_class->put_prev_task(rq, p);
+
+	oldprio = p->prio;
+	__setscheduler(rq, p, policy, prio);
+	ipipe_setsched_notify(p);
+
+	if (running)
+		p->sched_class->set_curr_task(rq);
+	if (on_rq) {
+		activate_task(rq, p, 0);
+		check_class_changed(rq, p, prev_class, oldprio, running);
+	}
+	__task_rq_unlock(rq);
+	spin_unlock_irqrestore(&p->pi_lock, flags);
+
+	rt_mutex_adjust_pi(p);
+
+	return 0;
+}
+
+EXPORT_SYMBOL(ipipe_setscheduler_root);
+
+int ipipe_reenter_root (struct task_struct *prev, int policy, int prio)
+{
+	finish_task_switch(this_rq(), prev);
+
+	(void)reacquire_kernel_lock(current);
+	preempt_enable_no_resched();
+
+	if (current->policy != policy || current->rt_priority != prio)
+		return ipipe_setscheduler_root(current, policy, prio);
+
+	return 0;
+}
+
+EXPORT_SYMBOL(ipipe_reenter_root);
+
+#endif /* CONFIG_IPIPE */

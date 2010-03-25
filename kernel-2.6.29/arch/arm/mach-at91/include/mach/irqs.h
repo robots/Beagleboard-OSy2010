@@ -45,4 +45,37 @@
 /* FIQ is AIC source 0. */
 #define FIQ_START AT91_ID_FIQ
 
+#if defined(CONFIG_IPIPE) && !defined(__ASSEMBLY__)
+extern unsigned __ipipe_at91_gpio_banks;
+
+#if defined(CONFIG_ARCH_AT91RM9200)
+#define __ipipe_mach_irq_mux_p(irq)					\
+	((unsigned) (irq - AT91RM9200_ID_PIOA) < __ipipe_at91_gpio_banks)
+
+#elif defined(CONFIG_ARCH_AT91SAM9260) || defined(CONFIG_ARCH_AT91SAM9G20)
+#define __ipipe_mach_irq_mux_p(irq)					\
+	((unsigned) (irq - AT91SAM9260_ID_PIOA) < __ipipe_at91_gpio_banks)
+
+#elif defined(CONFIG_ARCH_AT91SAM9261)
+#define __ipipe_mach_irq_mux_p(irq)					\
+	((unsigned) (irq - AT91SAM9261_ID_PIOA) < __ipipe_at91_gpio_banks)
+
+#elif defined(CONFIG_ARCH_AT91SAM9263)
+#define __ipipe_mach_irq_mux_p(irq)					\
+	((unsigned) (irq - AT91SAM9263_ID_PIOA) < __ipipe_at91_gpio_banks)
+
+#elif defined(CONFIG_ARCH_AT91SAM9RL)
+#define __ipipe_mach_irq_mux_p(irq)					\
+	((unsigned) (irq - AT91SAM9RL_ID_PIOA) < __ipipe_at91_gpio_banks)
+
+#elif defined(CONFIG_ARCH_AT91X40)
+#define __ipipe_mach_irq_mux_p(irq)					\
+	((unsigned) (irq - AT91X40_ID_PIOA) < __ipipe_at91_gpio_banks)
+
+#endif /* CONFIG_ARCH_AT91X40 */
+
+/* #define __IPIPE_FEATURE_PIC_MUTE */
+
+#endif /* CONFIG_IPIPE && !__ASSEMBLY__ */
+
 #endif

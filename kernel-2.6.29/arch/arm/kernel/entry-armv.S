@@ -4,6 +4,7 @@
  *  Copyright (C) 1996,1997,1998 Russell King.
  *  ARM700 fix by Matthew Godbolt (linux-user@willothewisp.demon.co.uk)
  *  nommu support by Hyok S. Choi (hyok.choi@samsung.com)
+ *  Copyright (C) 2005 Stelian Pop.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -27,14 +28,22 @@
  * Interrupt handling.  Preserves r7, r8, r9
  */
 	.macro	irq_handler
+#ifdef CONFIG_IPIPE
+	mov r0, #2
+#endif
 	get_irqnr_preamble r5, lr
-1:	get_irqnr_and_base r0, r6, r5, lr
+1:	get_irqnr_and_base r1, r6, r5, lr
+	movne	r0, r1
 	movne	r1, sp
 	@
 	@ routine called with r0 = irq number, r1 = struct pt_regs *
 	@
 	adrne	lr, 1b
+#ifdef CONFIG_IPIPE
+	bne	__ipipe_grab_irq
+#else
 	bne	asm_do_IRQ
+#endif
 
 #ifdef CONFIG_SMP
 	/*
@@ -43,17 +52,21 @@
 	 * this macro assumes that irqstat (r6) and base (r5) are
 	 * preserved from get_irqnr_and_base above
 	 */
-	test_for_ipi r0, r6, r5, lr
+	test_for_ipi r1, r6, r5, lr
 	movne	r0, sp
 	adrne	lr, 1b
 	bne	do_IPI
 
 #ifdef CONFIG_LOCAL_TIMERS
-	test_for_ltirq r0, r6, r5, lr
+	test_for_ltirq r1, r6, r5, lr
 	movne	r0, sp
 	adrne	lr, 1b
 	bne	do_local_timer
 #endif
+#endif
+#ifdef CONFIG_IPIPE
+	cmp	r0, #2
+	bleq	__ipipe_check_root_interruptible
 #endif
 
 	.endm
@@ -207,19 +220,33 @@ __irq_svc:
 #endif
 #ifdef CONFIG_PREEMPT
 	get_thread_info tsk
+#ifndef CONFIG_IPIPE
 	ldr	r8, [tsk, #TI_PREEMPT]		@ get preempt count
 	add	r7, r8, #1			@ increment it
 	str	r7, [tsk, #TI_PREEMPT]
 #endif
+#endif
 
 	irq_handler
+#ifdef CONFIG_IPIPE
+	cmp	r0, #0
+	beq	__ipipe_fast_svc_irq_exit
+#endif
+
 #ifdef CONFIG_PREEMPT
+#ifndef	CONFIG_IPIPE
 	str	r8, [tsk, #TI_PREEMPT]		@ restore preempt count
+#else
+	ldr	r8, [tsk, #TI_PREEMPT]
+#endif
 	ldr	r0, [tsk, #TI_FLAGS]		@ get flags
 	teq	r8, #0				@ if preempt count != 0
 	movne	r0, #0				@ force flags to 0
 	tst	r0, #_TIF_NEED_RESCHED
 	blne	svc_preempt
+#endif
+#ifdef CONFIG_IPIPE
+__ipipe_fast_svc_irq_exit:
 #endif
 	ldr	r0, [sp, #S_PSR]		@ irqs are already disabled
 	msr	spsr_cxsf, r0
@@ -235,12 +262,25 @@ ENDPROC(__irq_svc)
 #ifdef CONFIG_PREEMPT
 svc_preempt:
 	mov	r8, lr
+#ifndef CONFIG_IPIPE
 1:	bl	preempt_schedule_irq		@ irq en/disable is done inside
+#else /* CONFIG_IPIPE */
+1:	bl	__ipipe_preempt_schedule_irq	@ irq en/disable is done inside
+#endif /* CONFIG_IPIPE */
 	ldr	r0, [tsk, #TI_FLAGS]		@ get new tasks TI_FLAGS
 	tst	r0, #_TIF_NEED_RESCHED
 	moveq	pc, r8				@ go again
 	b	1b
-#endif
+#ifdef CONFIG_IPIPE
+#if __GNUC__ >= 4
+.LCipipe_root_status:
+	.word	__ipipe_root_status
+#else /* gcc < 4 */
+.LCipipe_root_status_addr:
+	.word	__ipipe_root_status_addr
+#endif /* gcc < 4 */
+#endif /* CONFIG_IPIPE */
+#endif /* CONFIG_PREEMPT */
 
 	.align	5
 __und_svc:
@@ -253,6 +293,17 @@ __und_svc:
 	svc_entry
 #endif
 
+#ifdef CONFIG_IPIPE
+	/* Beware, do_undefinstr in arch/arm/traps.c will not signal the trap
+	when in svc mode because of this hunk. */
+	mov	r4, r2
+	mov	r0, #7				@ r0 = IPIPE_TRAP_UNDEFINSTR
+	mov	r1, sp				@ r1 = &regs
+	bl	__ipipe_dispatch_event		@ branch to trap handler
+	cmp	r0, #0
+	bne	1f
+	mov	r2, r4
+#endif /* CONFIG_IPIPE */
 	@
 	@ call emulation code, which returns using r9 if it has emulated
 	@ the instruction, or the more conventional lr if we are to treat
@@ -432,17 +483,27 @@ __irq_usr:
 #endif
 	get_thread_info tsk
 #ifdef CONFIG_PREEMPT
+#ifndef CONFIG_IPIPE
 	ldr	r8, [tsk, #TI_PREEMPT]		@ get preempt count
 	add	r7, r8, #1			@ increment it
 	str	r7, [tsk, #TI_PREEMPT]
 #endif
+#endif
 
 	irq_handler
+#ifdef CONFIG_IPIPE
+	cmp	r0, #0
+	bne	__ipipe_usr_irq_continue
+	slow_restore_user_regs			@ Fast exit path over non-root domains
+__ipipe_usr_irq_continue:
+#endif
 #ifdef CONFIG_PREEMPT
+#ifndef CONFIG_IPIPE
 	ldr	r0, [tsk, #TI_PREEMPT]
 	str	r8, [tsk, #TI_PREEMPT]
 	teq	r0, r7
 	strne	r0, [r0, -r0]
+#endif
 #endif
 #ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_on
@@ -550,7 +611,7 @@ call_fpe:
 	mov	r7, #1
 	strb	r7, [r10, #TI_USED_CP + 10]	@ mark CP#10 as used
 	strb	r7, [r10, #TI_USED_CP + 11]	@ mark CP#11 as used
-	b	do_vfp				@ let VFP handler handle this
+	b	_do_vfp				@ let VFP handler handle this
 1:
 #endif
 	tst	r0, #0x08000000			@ only CDP/CPRT/LDC/STC have bit 27
@@ -592,8 +653,8 @@ call_fpe:
 	mov	pc, lr				@ CP#8
 	mov	pc, lr				@ CP#9
 #ifdef CONFIG_VFP
-	b	do_vfp				@ CP#10 (VFP)
-	b	do_vfp				@ CP#11 (VFP)
+	b	_do_vfp				@ CP#10 (VFP)
+	b	_do_vfp				@ CP#11 (VFP)
 #else
 	mov	pc, lr				@ CP#10 (VFP)
 	mov	pc, lr				@ CP#11 (VFP)
@@ -628,10 +689,42 @@ call_fpe:
 #endif
 
 do_fpe:
+#ifdef CONFIG_IPIPE
+	mov	r4, r0
+	mov	r5, r2
+	mov	r6, lr
+	mov	r0, #5				@ r0 = IPIPE_TRAP_FPU
+	mov	r1, sp				@ r1 = &regs
+	bl	__ipipe_dispatch_event		@ branch to trap handler
+	cmp	r0, #0
+	movne	pc, r9
+	mov	lr, r6
+	mov	r2, r5
+	mov	r0, r4
+#endif
 	enable_irq
 	ldr	r4, .LCfp
 	add	r10, r10, #TI_FPSTATE		@ r10 = workspace
 	ldr	pc, [r4]			@ Call FP module USR entry point
+
+#ifdef CONFIG_VFP
+_do_vfp:
+#ifdef CONFIG_IPIPE
+	mov	r4, r0
+	mov	r5, r2
+	mov	r6, lr
+	mov	r0, #6				@ r0 = IPIPE_TRAP_VFP
+	mov	r1, sp				@ r1 = &regs
+	bl	__ipipe_dispatch_event		@ branch to trap handler
+	cmp	r0, #0
+	movne	pc, r9
+	mov	lr, r6
+	mov	r2, r5
+	mov	r0, r4
+#endif
+	b	do_vfp
+#endif
+
 
 /*
  * The FP module is called with these registers set:
@@ -676,6 +769,13 @@ __pabt_usr:
  * This is the return code to user mode for abort handlers
  */
 ENTRY(ret_from_exception)
+#ifdef CONFIG_IPIPE
+	bl     __ipipe_check_root
+	cmp     r0, #0
+	bne     1f
+	slow_restore_user_regs          @ Fast exit path over non-root domains
+1:
+#endif /* CONFIG_IPIPE */
 	get_thread_info tsk
 	mov	why, #0
 	b	ret_to_user
@@ -714,7 +814,11 @@ ENTRY(__switch_to)
 	add	r4, r2, #TI_CPU_SAVE
 	ldr	r0, =thread_notify_head
 	mov	r1, #THREAD_NOTIFY_SWITCH
+#ifndef CONFIG_IPIPE
 	bl	atomic_notifier_call_chain
+#else /* !CONFIG_IPIPE */
+	bl	__ipipe_switch_to_notifier_call_chain
+#endif /* !CONFIG_IPIPE */
 	mov	r0, r5
 	ldmia	r4, {r4 - sl, fp, sp, pc}	@ Load all regs saved previously
 ENDPROC(__switch_to)
@@ -750,6 +854,18 @@ ENDPROC(__switch_to)
  * if your compiled code is not going to use the new instructions for other
  * purpose.
  */
+
+#ifdef CONFIG_IPIPE
+/* We use the same mechanism as Linux user helpers to store variables related to
+   TSC emulation, so that they can be used in user-space. */
+	.align 5
+	.globl  __ipipe_tsc_area_start
+
+__ipipe_tsc_area_start:
+	.rep	12
+	.word	0
+	.endr
+#endif /* CONFIG_IPIPE */
 
 	.macro	usr_ret, reg
 #ifdef CONFIG_ARM_THUMB

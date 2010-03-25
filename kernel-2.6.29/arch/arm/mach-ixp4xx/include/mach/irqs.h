@@ -70,6 +70,10 @@
 
 #define	XSCALE_PMU_IRQ		(IRQ_IXP4XX_XSCALE_PMU)
 
+#ifdef CONFIG_IPIPE
+#define __ipipe_mach_irq_mux_p(irq) 0 /* We have no cascaded interrupts. */
+#endif
+
 /*
  * IXDP425 board IRQs
  */

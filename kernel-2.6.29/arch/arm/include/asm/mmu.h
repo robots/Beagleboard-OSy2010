@@ -7,6 +7,15 @@ typedef struct {
 #ifdef CONFIG_CPU_HAS_ASID
 	unsigned int id;
 #endif
+#ifdef CONFIG_ARM_FCSE
+	unsigned long pid;
+#ifdef CONFIG_ARM_FCSE_BEST_EFFORT
+	unsigned big;
+	unsigned high_pages;
+	unsigned shared_dirty_pages;
+#endif /* CONFIG_ARM_FCSE_BEST_EFFORT */
+	cpumask_t cpu_tlb_mask;
+#endif
 	unsigned int kvm_seq;
 } mm_context_t;
 

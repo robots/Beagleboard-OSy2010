@@ -428,6 +428,13 @@ int omap_dm_timer_get_irq(struct omap_dm_timer *timer)
 }
 EXPORT_SYMBOL_GPL(omap_dm_timer_get_irq);
 
+#ifdef CONFIG_IPIPE
+unsigned long omap_dm_timer_get_phys_counter_addr(struct omap_dm_timer *timer)
+{
+	return timer->phys_base + (OMAP_TIMER_COUNTER_REG & 0xff);
+}
+#endif /* CONFIG_IPIPE */
+
 #if defined(CONFIG_ARCH_OMAP1)
 
 /**

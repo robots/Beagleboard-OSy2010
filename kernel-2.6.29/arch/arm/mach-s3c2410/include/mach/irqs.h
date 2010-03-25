@@ -3,6 +3,8 @@
  * Copyright (c) 2003-2005 Simtec Electronics
  *   Ben Dooks <ben@simtec.co.uk>
  *
+ * Copyright (C) 2006, 2007 Sebastian Smolorz <ssmolorz@emlix.com>, emlix GmbH
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
@@ -166,5 +168,39 @@
 
 /* Our FIQs are routable from IRQ_EINT0 to IRQ_ADCPARENT */
 #define FIQ_START		IRQ_EINT0
+
+#ifdef CONFIG_IPIPE
+#define __ipipe_irqbit(irq)	(1 << ((irq) - S3C2410_CPUIRQ_OFFSET))
+
+#ifdef CONFIG_CPU_S3C2440
+#define __ipipe_muxed_irqmask	(__ipipe_irqbit(IRQ_UART0)	|	\
+				 __ipipe_irqbit(IRQ_UART1)	|	\
+				 __ipipe_irqbit(IRQ_UART2)	|	\
+				 __ipipe_irqbit(IRQ_ADCPARENT)	|	\
+				 __ipipe_irqbit(IRQ_WDT)	|	\
+				 __ipipe_irqbit(IRQ_CAM)	|	\
+				 __ipipe_irqbit(IRQ_EINT4t7)	|	\
+				 __ipipe_irqbit(IRQ_EINT8t23))
+#elif defined CONFIG_CPU_S3C244X
+#define __ipipe_muxed_irqmask	(__ipipe_irqbit(IRQ_UART0)	|	\
+				 __ipipe_irqbit(IRQ_UART1)	|	\
+				 __ipipe_irqbit(IRQ_UART2)	|	\
+				 __ipipe_irqbit(IRQ_ADCPARENT)	|	\
+				 __ipipe_irqbit(IRQ_CAM)	|	\
+				 __ipipe_irqbit(IRQ_EINT4t7)	|	\
+				 __ipipe_irqbit(IRQ_EINT8t23))
+#else
+#define __ipipe_muxed_irqmask	(__ipipe_irqbit(IRQ_UART0)	|	\
+				 __ipipe_irqbit(IRQ_UART1)	|	\
+				 __ipipe_irqbit(IRQ_UART2)	|	\
+				 __ipipe_irqbit(IRQ_ADCPARENT)	|	\
+				 __ipipe_irqbit(IRQ_EINT4t7)	|	\
+				 __ipipe_irqbit(IRQ_EINT8t23))
+#endif
+
+#define __ipipe_mach_irq_mux_p(irq)	((irq) <= IRQ_ADCPARENT  &&	\
+					 (__ipipe_irqbit(irq) &		\
+					  __ipipe_muxed_irqmask))
+#endif /* CONFIG_IPIPE */
 
 #endif /* __ASM_ARCH_IRQ_H */

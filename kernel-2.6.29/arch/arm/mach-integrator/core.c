@@ -2,6 +2,7 @@
  *  linux/arch/arm/mach-integrator/core.c
  *
  *  Copyright (C) 2000-2003 Deep Blue Solutions Ltd
+ *  Copyright (C) 2005 Stelian Pop.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -230,16 +231,51 @@ EXPORT_SYMBOL(cm_control);
 /*
  * How long is the timer interval?
  */
-#define TIMER_INTERVAL	(TICKS_PER_uSEC * mSEC_10)
-#if TIMER_INTERVAL >= 0x100000
-#define TICKS2USECS(x)	(256 * (x) / TICKS_PER_uSEC)
-#elif TIMER_INTERVAL >= 0x10000
-#define TICKS2USECS(x)	(16 * (x) / TICKS_PER_uSEC)
-#else
 #define TICKS2USECS(x)	((x) / TICKS_PER_uSEC)
-#endif
 
 static unsigned long timer_reload;
+static unsigned long timer_interval;
+static unsigned long timer_lxlost;
+static int tscok;
+
+#ifdef CONFIG_IPIPE
+int __ipipe_mach_timerint = IRQ_TIMERINT1;
+static unsigned long long __ipipe_mach_tsc;
+static IPIPE_DEFINE_SPINLOCK(timer_lock);
+
+int __ipipe_mach_timerstolen = 0;
+EXPORT_SYMBOL(__ipipe_mach_timerstolen);
+
+void __ipipe_mach_get_tscinfo(struct __ipipe_tscinfo *info)
+{
+	info->type = IPIPE_TSC_TYPE_NONE;
+}
+#endif
+
+/*
+ * Called with IRQ disabled from do_gettimeofday().
+ */
+static inline unsigned long integrator_getticksoffset(void)
+{
+	unsigned long ticks;
+
+	if (!tscok)
+		return 0;
+
+	ticks = readl(TIMER1_VA_BASE + TIMER_VALUE) & 0xffff;
+
+	if (ticks > timer_reload)
+		ticks = 0xffff + timer_reload - ticks;
+	else
+		ticks = timer_reload - ticks;
+
+	if (timer_interval < 0x10000)
+		return ticks;
+	else if (timer_interval < 0x100000)
+		return ticks * 16;
+	else
+		return ticks * 256;
+}
 
 /*
  * Returns number of ms since last clock interrupt.  Note that interrupts
@@ -247,36 +283,10 @@ static unsigned long timer_reload;
  */
 unsigned long integrator_gettimeoffset(void)
 {
-	unsigned long ticks1, ticks2, status;
-
-	/*
-	 * Get the current number of ticks.  Note that there is a race
-	 * condition between us reading the timer and checking for
-	 * an interrupt.  We get around this by ensuring that the
-	 * counter has not reloaded between our two reads.
-	 */
-	ticks2 = readl(TIMER1_VA_BASE + TIMER_VALUE) & 0xffff;
-	do {
-		ticks1 = ticks2;
-		status = __raw_readl(VA_IC_BASE + IRQ_RAW_STATUS);
-		ticks2 = readl(TIMER1_VA_BASE + TIMER_VALUE) & 0xffff;
-	} while (ticks2 > ticks1);
-
-	/*
-	 * Number of ticks since last interrupt.
-	 */
-	ticks1 = timer_reload - ticks2;
-
-	/*
-	 * Interrupt pending?  If so, we've reloaded once already.
-	 */
-	if (status & (1 << IRQ_TIMERINT1))
-		ticks1 += timer_reload;
-
 	/*
 	 * Convert the ticks to usecs
 	 */
-	return TICKS2USECS(ticks1);
+	return TICKS2USECS(timer_lxlost + integrator_getticksoffset());
 }
 
 /*
@@ -285,11 +295,22 @@ unsigned long integrator_gettimeoffset(void)
 static irqreturn_t
 integrator_timer_interrupt(int irq, void *dev_id)
 {
-	/*
-	 * clear the interrupt
-	 */
-	writel(1, TIMER1_VA_BASE + TIMER_INTCLR);
+	timer_lxlost = 0;
 
+#ifdef CONFIG_IPIPE
+	/*
+	 * If Linux is the only domain, ack the timer and reprogram it
+	 */
+	if (!__ipipe_mach_timerstolen) {
+		__ipipe_mach_tsc += integrator_getticksoffset();
+#else
+		writel(1, TIMER1_VA_BASE + TIMER_INTCLR);
+#endif
+
+		writel(timer_reload, TIMER1_VA_BASE + TIMER_LOAD);
+#ifdef CONFIG_IPIPE
+	}
+#endif
 	timer_tick();
 
 	return IRQ_HANDLED;
@@ -301,24 +322,30 @@ static struct irqaction integrator_timer_irq = {
 	.handler	= integrator_timer_interrupt,
 };
 
+static inline void set_dec(unsigned long reload)
+{
+	unsigned int ctrl = TIMER_CTRL_ENABLE | TIMER_CTRL_IE;
+
+	timer_reload = reload;
+	timer_interval = reload;
+
+	if (timer_reload >= 0x100000) {
+		timer_reload >>= 8;
+		ctrl |= TIMER_CTRL_DIV256;
+	} else if (timer_reload >= 0x010000) {
+		timer_reload >>= 4;
+		ctrl |= TIMER_CTRL_DIV16;
+	}
+
+	writel(ctrl, TIMER1_VA_BASE + TIMER_CTRL);
+	writel(timer_reload, TIMER1_VA_BASE + TIMER_LOAD);
+}
+
 /*
  * Set up timer interrupt, and return the current time in seconds.
  */
 void __init integrator_time_init(unsigned long reload, unsigned int ctrl)
 {
-	unsigned int timer_ctrl = TIMER_CTRL_ENABLE | TIMER_CTRL_PERIODIC;
-
-	timer_reload = reload;
-	timer_ctrl |= ctrl;
-
-	if (timer_reload > 0x100000) {
-		timer_reload >>= 8;
-		timer_ctrl |= TIMER_CTRL_DIV256;
-	} else if (timer_reload > 0x010000) {
-		timer_reload >>= 4;
-		timer_ctrl |= TIMER_CTRL_DIV16;
-	}
-
 	/*
 	 * Initialise to a known state (all timers off)
 	 */
@@ -326,12 +353,60 @@ void __init integrator_time_init(unsigned long reload, unsigned int ctrl)
 	writel(0, TIMER1_VA_BASE + TIMER_CTRL);
 	writel(0, TIMER2_VA_BASE + TIMER_CTRL);
 
-	writel(timer_reload, TIMER1_VA_BASE + TIMER_LOAD);
-	writel(timer_reload, TIMER1_VA_BASE + TIMER_VALUE);
-	writel(timer_ctrl, TIMER1_VA_BASE + TIMER_CTRL);
+	set_dec(reload);
 
 	/*
 	 * Make irqs happen for the system timer
 	 */
 	setup_irq(IRQ_TIMERINT1, &integrator_timer_irq);
+
+	tscok = 1;
 }
+
+#ifdef CONFIG_IPIPE
+
+void __ipipe_mach_acktimer(void)
+{
+	writel(1, TIMER1_VA_BASE + TIMER_INTCLR);
+}
+
+notrace unsigned long long __ipipe_mach_get_tsc(void)
+{
+	unsigned long long result;
+	unsigned long flags;
+
+	local_irq_save_hw_notrace(flags);
+	spin_lock(&timer_lock);
+	result = __ipipe_mach_tsc + integrator_getticksoffset();
+	spin_unlock(&timer_lock);
+	local_irq_restore_hw_notrace(flags);
+	return result;
+}
+EXPORT_SYMBOL(__ipipe_mach_get_tsc);
+
+void __ipipe_mach_set_dec(unsigned long reload)
+{
+	unsigned long ticks;
+	unsigned long flags;
+
+	spin_lock_irqsave(&timer_lock, flags);
+	ticks = integrator_getticksoffset();
+	__ipipe_mach_tsc += ticks;
+	timer_lxlost += ticks;
+
+	set_dec(reload);
+	spin_unlock_irqrestore(&timer_lock, flags);
+}
+EXPORT_SYMBOL(__ipipe_mach_set_dec);
+
+void __ipipe_mach_release_timer(void)
+{
+       __ipipe_mach_set_dec(__ipipe_mach_ticks_per_jiffy);
+}
+EXPORT_SYMBOL(__ipipe_mach_release_timer);
+
+unsigned long __ipipe_mach_get_dec(void)
+{
+	return readl(TIMER1_VA_BASE + TIMER_VALUE);
+}
+#endif /* CONFIG_IPIPE */

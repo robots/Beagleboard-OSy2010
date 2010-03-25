@@ -1075,6 +1075,7 @@ NORET_TYPE void do_exit(long code)
 		acct_process();
 	trace_sched_process_exit(tsk);
 
+  	ipipe_exit_notify(tsk);
 	exit_sem(tsk);
 	exit_files(tsk);
 	exit_fs(tsk);

@@ -387,6 +387,14 @@ extern void omap_init_irq(void);
 extern int omap_irq_pending(void);
 #endif
 
+#ifdef CONFIG_IPIPE
+#ifdef CONFIG_ARCH_OMAP34XX
+#define __ipipe_mach_irq_mux_p(irq) \
+	((unsigned) (irq - INT_34XX_GPIO_BANK1) \
+	 <= (INT_34XX_GPIO_BANK6 - INT_34XX_GPIO_BANK1))
+#endif /* OMAP34XX */
+#endif /* CONFIG_IPIPE */
+
 #include <mach/hardware.h>
 
 #endif

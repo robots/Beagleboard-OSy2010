@@ -71,3 +71,14 @@ obj-$(CONFIG_AT91_SLOW_CLOCK)	+= pm_slowclock.o
 ifeq ($(CONFIG_PM_DEBUG),y)
 CFLAGS_pm.o += -DDEBUG
 endif
+
+ifeq ($(CONFIG_IPIPE),y)
+obj-y := $(filter-out at91rm9200_time.o at91sam926x_time.o at91x40_time.o, $(obj-y))
+obj-$(CONFIG_ARCH_AT91RM9200)   += at91_ipipe_time.o
+obj-$(CONFIG_ARCH_AT91SAM9260)  += at91_ipipe_time.o
+obj-$(CONFIG_ARCH_AT91SAM9G20)  += at91_ipipe_time.o
+obj-$(CONFIG_ARCH_AT91SAM9261)  += at91_ipipe_time.o
+obj-$(CONFIG_ARCH_AT91SAM9263)	+= at91_ipipe_time.o
+obj-$(CONFIG_ARCH_AT91SAM9RL)	+= at91_ipipe_time.o
+obj-$(CONFIG_ARCH_AT91X40)	+= at91_ipipe_time.o
+endif

@@ -482,6 +482,7 @@ void mmput(struct mm_struct *mm)
 	if (atomic_dec_and_test(&mm->mm_users)) {
 		exit_aio(mm);
 		exit_mmap(mm);
+ 		ipipe_cleanup_notify(mm);
 		set_mm_exe_file(mm, NULL);
 		if (!list_empty(&mm->mmlist)) {
 			spin_lock(&mmlist_lock);
@@ -893,7 +894,7 @@ static void copy_flags(unsigned long clone_flags, struct task_struct *p)
 {
 	unsigned long new_flags = p->flags;
 
-	new_flags &= ~PF_SUPERPRIV;
+ 	new_flags &= ~(PF_SUPERPRIV | PF_EVNOTIFY);
 	new_flags |= PF_FORKNOEXEC;
 	new_flags |= PF_STARTING;
 	p->flags = new_flags;
@@ -1274,6 +1275,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	write_unlock_irq(&tasklist_lock);
 	proc_fork_connector(p);
 	cgroup_post_fork(p);
+#ifdef CONFIG_IPIPE
+	memset(p->ptd, 0, sizeof(p->ptd));
+#endif /* CONFIG_IPIPE */
 	return p;
 
 bad_fork_free_graph:

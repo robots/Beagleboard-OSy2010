@@ -15,6 +15,7 @@
 #include <asm/cachetype.h>
 #include <asm/system.h>
 #include <asm/tlbflush.h>
+#include <asm/fcse.h>
 
 #include "mm.h"
 
@@ -41,8 +42,10 @@ static void flush_pfn_alias(unsigned long pfn, unsigned long vaddr)
 void flush_cache_mm(struct mm_struct *mm)
 {
 	if (cache_is_vivt()) {
-		if (cpu_isset(smp_processor_id(), mm->cpu_vm_mask))
+		if (cpu_isset(smp_processor_id(), mm->cpu_vm_mask)) {
+			fcse_notify_flush_all();
 			__cpuc_flush_user_all();
+		}
 		return;
 	}
 
@@ -59,9 +62,11 @@ void flush_cache_mm(struct mm_struct *mm)
 void flush_cache_range(struct vm_area_struct *vma, unsigned long start, unsigned long end)
 {
 	if (cache_is_vivt()) {
-		if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask))
-			__cpuc_flush_user_range(start & PAGE_MASK, PAGE_ALIGN(end),
-						vma->vm_flags);
+		if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask)) {
+			start = fcse_va_to_mva(vma->vm_mm, start) & PAGE_MASK;
+			end = PAGE_ALIGN(fcse_va_to_mva(vma->vm_mm, end));
+			__cpuc_flush_user_range(start, end, vma->vm_flags);
+		}
 		return;
 	}
 
@@ -79,8 +84,11 @@ void flush_cache_page(struct vm_area_struct *vma, unsigned long user_addr, unsig
 {
 	if (cache_is_vivt()) {
 		if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask)) {
-			unsigned long addr = user_addr & PAGE_MASK;
-			__cpuc_flush_user_range(addr, addr + PAGE_SIZE, vma->vm_flags);
+			unsigned long addr;
+			addr = fcse_va_to_mva(vma->vm_mm, user_addr);
+			addr &= PAGE_MASK;
+			__cpuc_flush_user_range(addr, addr + PAGE_SIZE,
+						vma->vm_flags);
 		}
 		return;
 	}

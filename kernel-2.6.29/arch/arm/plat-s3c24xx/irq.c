@@ -3,6 +3,8 @@
  * Copyright (c) 2003,2004 Simtec Electronics
  *	Ben Dooks <ben@simtec.co.uk>
  *
+ * Copyright (C) 2006, 2007 Sebastian Smolorz <ssmolorz@emlix.com>, emlix GmbH
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -48,6 +50,9 @@
  *
  *   25-Jul-2005  Ben Dooks
  *		  Split the S3C2440 IRQ code to separate file
+ *
+ *   30-Oct-2006  Sebastian Smolorz
+ *		  Added Adeos/I-pipe support
 */
 
 #include <linux/init.h>
@@ -56,6 +61,7 @@
 #include <linux/ioport.h>
 #include <linux/sysdev.h>
 #include <linux/io.h>
+#include <linux/ipipe.h>
 
 #include <mach/hardware.h>
 #include <asm/irq.h>
@@ -69,6 +75,14 @@
 #include <plat/cpu.h>
 #include <plat/pm.h>
 #include <plat/irq.h>
+
+#ifdef CONFIG_IPIPE
+#ifdef CONFIG_CPU_S3C2440
+extern void __ipipe_s3c_irq_demux_wdtac97(unsigned int irq,
+					  struct pt_regs *regs);
+extern void __ipipe_s3c_irq_demux_cam(unsigned int irq, struct pt_regs *regs);
+#endif /* CONFIG_CPU_S3C2440 */
+#endif /* CONFIG_IPIPE */
 
 /* wakeup irq control */
 
@@ -184,6 +198,9 @@ struct irq_chip s3c_irq_level_chip = {
 	.name		= "s3c-level",
 	.ack		= s3c_irq_maskack,
 	.mask		= s3c_irq_mask,
+#ifdef CONFIG_IPIPE
+	.mask_ack       = s3c_irq_maskack,
+#endif /* CONFIG_IPIPE */
 	.unmask		= s3c_irq_unmask,
 	.set_wake	= s3c_irq_wake
 };
@@ -380,6 +397,9 @@ static struct irq_chip s3c_irq_uart0 = {
 	.mask		= s3c_irq_uart0_mask,
 	.unmask		= s3c_irq_uart0_unmask,
 	.ack		= s3c_irq_uart0_ack,
+#ifdef CONFIG_IPIPE
+	.mask_ack       = s3c_irq_uart0_ack,
+#endif /* CONFIG_IPIPE */
 };
 
 /* UART1 */
@@ -407,6 +427,9 @@ static struct irq_chip s3c_irq_uart1 = {
 	.mask		= s3c_irq_uart1_mask,
 	.unmask		= s3c_irq_uart1_unmask,
 	.ack		= s3c_irq_uart1_ack,
+#ifdef CONFIG_IPIPE
+	.mask_ack	= s3c_irq_uart1_ack,
+#endif /* CONFIG_IPIPE */
 };
 
 /* UART2 */
@@ -434,6 +457,9 @@ static struct irq_chip s3c_irq_uart2 = {
 	.mask		= s3c_irq_uart2_mask,
 	.unmask		= s3c_irq_uart2_unmask,
 	.ack		= s3c_irq_uart2_ack,
+#ifdef CONFIG_IPIPE
+	.mask_ack	= s3c_irq_uart2_ack,
+#endif /* CONFIG_IPIPE */
 };
 
 /* ADC and Touchscreen */
@@ -642,6 +668,121 @@ int s3c24xx_irq_resume(struct sys_device *dev)
 #define s3c24xx_irq_suspend NULL
 #define s3c24xx_irq_resume  NULL
 #endif
+
+#ifdef CONFIG_IPIPE
+static void __ipipe_s3c_irq_demux_uart(unsigned int start,
+					unsigned int subsrc,
+					struct pt_regs *regs)
+{
+	unsigned int offset = start - IRQ_S3CUART_RX0;
+
+	subsrc >>= offset;
+	subsrc &= 7;
+
+	if (subsrc != 0) {
+		if (subsrc & 1) {
+			__ipipe_handle_irq(start, regs);
+			return;
+		}
+		if (subsrc & 2) {
+			__ipipe_handle_irq(start+1, regs);
+			return;
+		}
+		if (subsrc & 4) {
+			__ipipe_handle_irq(start+2, regs);
+			return;
+		}
+	}
+}
+
+static void __ipipe_s3c_irq_demux_adc(unsigned int subsrc,
+					struct pt_regs *regs)
+{
+	subsrc >>= 9;
+	subsrc &= 3;
+
+	if (subsrc != 0) {
+		if (subsrc & 1) {
+			__ipipe_handle_irq(IRQ_TC, regs);
+			return;
+		}
+		if (subsrc & 2) {
+			__ipipe_handle_irq(IRQ_ADC, regs);
+			return;
+		}
+	}
+}
+
+static void __ipipe_s3c_irq_demux_extint(unsigned long mask,
+						struct pt_regs *regs)
+{
+	unsigned int irq;
+	unsigned long eintpnd = __raw_readl(S3C24XX_EINTPEND);
+	unsigned long eintmsk = __raw_readl(S3C24XX_EINTMASK);
+
+	while ((eintpnd &= ~eintmsk & mask)) {
+		irq = __ffs(eintpnd);
+
+		irq += (IRQ_EINT4 - 4);
+
+		__ipipe_handle_irq(irq, regs);
+
+		eintpnd = __raw_readl(S3C24XX_EINTPEND);
+		eintmsk = __raw_readl(S3C24XX_EINTMASK);
+	}
+}
+
+void __ipipe_mach_demux_irq(unsigned irq, struct pt_regs *regs)
+{
+	unsigned int subsrc, submsk;
+
+	/* read the current pending interrupts, and the mask
+	 * for what it is available */
+	for(;;) {
+		subsrc = __raw_readl(S3C2410_SUBSRCPND);
+		submsk = __raw_readl(S3C2410_INTSUBMSK);
+
+		subsrc &= ~submsk;
+
+		if (!subsrc)
+			break;
+
+		switch (irq) {
+		case IRQ_UART0:
+			__ipipe_s3c_irq_demux_uart(IRQ_S3CUART_RX0,
+						   subsrc, regs);
+			break;
+		case IRQ_UART1:
+			__ipipe_s3c_irq_demux_uart(IRQ_S3CUART_RX1,
+						   subsrc, regs);
+			break;
+		case IRQ_UART2:
+			__ipipe_s3c_irq_demux_uart(IRQ_S3CUART_RX2,
+						   subsrc, regs);
+			break;
+		case IRQ_ADCPARENT:
+			__ipipe_s3c_irq_demux_adc(subsrc, regs);
+			break;
+		case IRQ_EINT4t7:
+			__ipipe_s3c_irq_demux_extint(0xff, regs);
+			break;
+		case IRQ_EINT8t23:
+			__ipipe_s3c_irq_demux_extint(0xffffff00, regs);
+			break;
+#ifdef CONFIG_CPU_S3C2440
+		case IRQ_WDT:
+			__ipipe_s3c_irq_demux_wdtac97(subsrc, regs);
+			break;
+#endif /* CONFIG_CPU_S3C2440 */
+#ifdef CONFIG_CPU_S3C244X
+		case IRQ_CAM:
+			__ipipe_s3c_irq_demux_cam(subsrc, regs);
+			break;
+#endif /* CONFIG_CPU_S3C244X */
+		}
+	}
+}
+#endif /* CONFIG_IPIPE */
 
 /* s3c24xx_init_irq
  *

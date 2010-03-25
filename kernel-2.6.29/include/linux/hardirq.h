@@ -166,18 +166,24 @@ extern void irq_exit(void);
 
 #define nmi_enter()				\
 	do {					\
-		ftrace_nmi_enter();		\
-		lockdep_off();			\
-		rcu_nmi_enter();		\
-		__irq_enter();			\
+ 		ipipe_nmi_enter();		\
+ 		if (__ipipe_root_domain_p) {	\
+			ftrace_nmi_enter();	\
+			lockdep_off();		\
+			rcu_nmi_enter();	\
+			__irq_enter();		\
+		}				\
 	} while (0)
 
 #define nmi_exit()				\
 	do {					\
-		__irq_exit();			\
-		rcu_nmi_exit();			\
-		lockdep_on();			\
-		ftrace_nmi_exit();		\
+ 		if (__ipipe_root_domain_p) {	\
+			__irq_exit();		\
+			rcu_nmi_exit();		\
+			lockdep_on();		\
+			ftrace_nmi_exit();	\
+		}				\
+ 		ipipe_nmi_exit();		\
 	} while (0)
 
 #endif /* LINUX_HARDIRQ_H */

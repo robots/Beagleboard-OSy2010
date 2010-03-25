@@ -90,6 +90,10 @@
 #define IRQ_TO_GPIO_2_x(i)	((i) - PXA_GPIO_IRQ_BASE)
 #define IRQ_TO_GPIO(i)	(((i) < IRQ_GPIO(2)) ? ((i) - IRQ_GPIO0) : IRQ_TO_GPIO_2_x(i))
 
+#ifdef CONFIG_IPIPE
+#define __ipipe_mach_irq_mux_p(irq) ((irq) == IRQ_GPIO_2_x)
+#endif /* CONFIG_IPIPE */
+
 /*
  * The next 16 interrupts are for board specific purposes.  Since
  * the kernel can only run on one machine at a time, we can re-use

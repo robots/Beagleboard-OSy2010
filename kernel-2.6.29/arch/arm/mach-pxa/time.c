@@ -25,6 +25,60 @@
 #include <mach/hardware.h>
 #include <mach/pxa-regs.h>
 
+#ifdef CONFIG_IPIPE
+#ifdef CONFIG_NO_IDLE_HZ
+#error "dynamic tick timer not yet supported with IPIPE"
+#endif /* CONFIG_NO_IDLE_HZ */
+int __ipipe_mach_timerint = IRQ_OST0;
+EXPORT_SYMBOL(__ipipe_mach_timerint);
+
+int __ipipe_mach_timerstolen = 0;
+EXPORT_SYMBOL(__ipipe_mach_timerstolen);
+
+unsigned int __ipipe_mach_ticks_per_jiffy = LATCH;
+EXPORT_SYMBOL(__ipipe_mach_ticks_per_jiffy);
+
+static int pxa_timer_initialized;
+
+union tsc_reg {
+#ifdef __BIG_ENDIAN
+	struct {
+		unsigned long high;
+		unsigned long low;
+	};
+#else /* __LITTLE_ENDIAN */
+	struct {
+		unsigned long low;
+		unsigned long high;
+	};
+#endif /* __LITTLE_ENDIAN */
+	unsigned long long full;
+};
+
+#ifdef CONFIG_SMP
+static union tsc_reg tsc[NR_CPUS];
+
+void __ipipe_mach_get_tscinfo(struct __ipipe_tscinfo *info)
+{
+	info->type = IPIPE_TSC_TYPE_NONE;
+}
+
+#else /* !CONFIG_SMP */
+static union tsc_reg *tsc;
+
+void __ipipe_mach_get_tscinfo(struct __ipipe_tscinfo *info)
+{
+	info->type = IPIPE_TSC_TYPE_FREERUNNING;
+	info->u.fr.counter = (unsigned *) 0x40A00010;
+	info->u.fr.mask = 0xffffffff;
+	info->u.fr.tsc = &tsc->full;
+}
+#endif /* !CONFIG_SMP */
+
+static void ipipe_mach_update_tsc(void);
+
+#endif /* CONFIG_IPIPE */
+
 /*
  * This is PXA's sched_clock implementation. This has a resolution
  * of at least 308 ns and a maximum value of 208 days.
@@ -67,8 +121,12 @@ pxa_ost0_interrupt(int irq, void *dev_id)
 	struct clock_event_device *c = dev_id;
 
 	/* Disarm the compare/match, signal the event. */
+#ifndef CONFIG_IPIPE
 	OIER &= ~OIER_E0;
 	OSSR = OSSR_M0;
+#else /* CONFIG_IPIPE */
+	ipipe_mach_update_tsc();
+#endif /* CONFIG_IPIPE */
 	c->event_handler(c);
 
 	return IRQ_HANDLED;
@@ -80,8 +138,8 @@ pxa_osmr0_set_next_event(unsigned long delta, struct clock_event_device *dev)
 	unsigned long flags, next, oscr;
 
 	raw_local_irq_save(flags);
-	OIER |= OIER_E0;
 	next = OSCR + delta;
+	OIER |= OIER_E0;
 	OSMR0 = next;
 	oscr = OSCR;
 	raw_local_irq_restore(flags);
@@ -126,6 +184,13 @@ static struct clock_event_device ckevt_pxa_osmr0 = {
 	.set_mode	= pxa_osmr0_set_mode,
 };
 
+#ifdef CONFIG_IPIPE
+int __ipipe_check_tickdev(const char *devname)
+{
+	return !strcmp(devname, ckevt_pxa_osmr0.name);
+}
+#endif /* CONFIG_IPIPE */
+
 static cycle_t pxa_read_oscr(void)
 {
 	return OSCR;
@@ -168,6 +233,15 @@ static void __init pxa_timer_init(void)
 		clocksource_hz2mult(clock_tick_rate, cksrc_pxa_oscr0.shift);
 
 	setup_irq(IRQ_OST0, &pxa_ost0_irq);
+
+#ifdef CONFIG_IPIPE
+#ifndef CONFIG_SMP
+	tsc = (union tsc_reg *) __ipipe_tsc_area;
+	barrier();
+#endif /* CONFIG_SMP */
+
+	pxa_timer_initialized = 1;
+#endif /* CONFIG_IPIPE */
 
 	clocksource_register(&cksrc_pxa_oscr0);
 	clockevents_register_device(&ckevt_pxa_osmr0);
@@ -214,3 +288,81 @@ struct sys_timer pxa_timer = {
 	.suspend	= pxa_timer_suspend,
 	.resume		= pxa_timer_resume,
 };
+
+#ifdef CONFIG_IPIPE
+void __ipipe_mach_acktimer(void)
+{
+	OSSR = OSSR_M0;  /* Clear match on timer 0 */
+	OIER &= ~OIER_E0;
+}
+
+static void ipipe_mach_update_tsc(void)
+{
+	union tsc_reg *local_tsc;
+	unsigned long stamp, flags;
+
+	local_irq_save_hw(flags);
+	local_tsc = &tsc[ipipe_processor_id()];
+	stamp = OSCR;
+	if (unlikely(stamp < local_tsc->low))
+		/* 32 bit counter wrapped, increment high word. */
+		local_tsc->high++;
+	local_tsc->low = stamp;
+	local_irq_restore_hw(flags);
+}
+
+notrace unsigned long long __ipipe_mach_get_tsc(void)
+{
+	if (likely(pxa_timer_initialized)) {
+		union tsc_reg *local_tsc, result;
+		unsigned long stamp;
+
+		local_tsc = &tsc[ipipe_processor_id()];
+
+		__asm__ ("ldmia %1, %M0\n":
+			 "=r"(result.full): "r"(local_tsc), "m"(*local_tsc));
+		barrier();
+		stamp = OSCR;
+		if (unlikely(stamp < result.low))
+			/* 32 bit counter wrapped, increment high word. */
+			result.high++;
+		result.low = stamp;
+
+		return result.full;
+	}
+
+        return 0;
+}
+EXPORT_SYMBOL(__ipipe_mach_get_tsc);
+
+/*
+ * Reprogram the timer
+ */
+
+void __ipipe_mach_set_dec(unsigned long delay)
+{
+	if (delay > MIN_OSCR_DELTA) {
+		unsigned long flags;
+
+		local_irq_save_hw(flags);
+		OSMR0 = delay + OSCR;
+		OIER |= OIER_E0;
+		local_irq_restore_hw(flags);
+	} else
+		ipipe_trigger_irq(IRQ_OST0);
+}
+EXPORT_SYMBOL(__ipipe_mach_set_dec);
+
+void __ipipe_mach_release_timer(void)
+{
+	pxa_osmr0_set_mode(ckevt_pxa_osmr0.mode, &ckevt_pxa_osmr0);
+	if (ckevt_pxa_osmr0.mode == CLOCK_EVT_MODE_ONESHOT)
+		pxa_osmr0_set_next_event(LATCH, &ckevt_pxa_osmr0);
+}
+EXPORT_SYMBOL(__ipipe_mach_release_timer);
+
+unsigned long __ipipe_mach_get_dec(void)
+{
+	return OSMR0 - OSCR;
+}
+#endif /* CONFIG_IPIPE */

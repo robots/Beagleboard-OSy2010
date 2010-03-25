@@ -10,6 +10,7 @@
  * as cpu led, the green one is used as timer led.
  */
 #include <linux/init.h>
+#include <linux/ipipe_base.h>
 
 #include <mach/hardware.h>
 #include <asm/leds.h>

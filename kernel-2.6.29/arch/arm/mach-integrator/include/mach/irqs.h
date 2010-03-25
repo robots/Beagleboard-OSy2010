@@ -80,3 +80,6 @@
 
 #define NR_IRQS                         47
 
+#ifdef CONFIG_IPIPE
+#define __ipipe_mach_irq_mux_p(irq) ((irq) == IRQ_CP_CPPLDINT)
+#endif /* CONFIG_IPIPE */

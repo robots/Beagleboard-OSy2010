@@ -2,6 +2,7 @@
  *  linux/arch/arm/kernel/entry-common.S
  *
  *  Copyright (C) 2000 Russell King
+ *  Copyright (C) 2005 Stelian Pop.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -21,16 +22,21 @@
  * possible here, and this includes saving r0 back into the SVC
  * stack.
  */
+#ifdef CONFIG_IPIPE
+__ipipe_ret_fast_syscall:
+	ldr	r0, [sp, #S_R0+S_OFF]		@ returned r0
+	/* fall through */
+#endif
 ret_fast_syscall:
 	disable_irq				@ disable interrupts
 	ldr	r1, [tsk, #TI_FLAGS]
 	tst	r1, #_TIF_WORK_MASK
 	bne	fast_work_pending
 
+fast_restore_user_regs:
 	/* perform architecture specific actions before user return */
 	arch_ret_to_user r1, lr
 
-	@ fast_restore_user_regs
 	ldr	r1, [sp, #S_OFF + S_PSR]	@ get calling cpsr
 	ldr	lr, [sp, #S_OFF + S_PC]!	@ get pc
 	msr	spsr_cxsf, r1			@ save in spsr_svc
@@ -38,6 +44,13 @@ ret_fast_syscall:
 	mov	r0, r0
 	add	sp, sp, #S_FRAME_SIZE - S_PC
 	movs	pc, lr				@ return & move spsr_svc into cpsr
+
+#ifdef CONFIG_IPIPE
+__ipipe_fast_exit_syscall:
+	ldr	r0, [sp, #S_R0+S_OFF]		@ returned r0
+	disable_irq				@ disable interrupts
+	b	fast_restore_user_regs
+#endif /* CONFIG_IPIPE */
 
 /*
  * Ok, we need to do extra processing, enter the slow path.
@@ -49,13 +62,16 @@ work_pending:
 	bne	work_resched
 	tst	r1, #_TIF_SIGPENDING
 	beq	no_work_pending
+	enable_irq_cond
 	mov	r0, sp				@ 'regs'
 	mov	r2, why				@ 'syscall'
 	bl	do_notify_resume
 	b	ret_slow_syscall		@ Check work again
 
 work_resched:
+	enable_irq_cond
 	bl	schedule
+
 /*
  * "slow" syscall return path.  "why" tells us if this was a real syscall.
  */
@@ -66,27 +82,14 @@ ret_slow_syscall:
 	tst	r1, #_TIF_WORK_MASK
 	bne	work_pending
 no_work_pending:
-	/* perform architecture specific actions before user return */
-	arch_ret_to_user r1, lr
-
-#ifdef CONFIG_ARM_ERRATUM_451034
-	dmb
-#endif
-
-	@ slow_restore_user_regs
-	ldr	r1, [sp, #S_PSR]		@ get calling cpsr
-	ldr	lr, [sp, #S_PC]!		@ get pc
-	msr	spsr_cxsf, r1			@ save in spsr_svc
-	ldmdb	sp, {r0 - lr}^			@ get calling r0 - lr
-	mov	r0, r0
-	add	sp, sp, #S_FRAME_SIZE - S_PC
-	movs	pc, lr				@ return & move spsr_svc into cpsr
+ 	slow_restore_user_regs
 ENDPROC(ret_to_user)
 
 /*
  * This is how we return from a fork.
  */
 ENTRY(ret_from_fork)
+ 	enable_irq_cond
 	bl	schedule_tail
 	get_thread_info tsk
 	ldr	r1, [tsk, #TI_FLAGS]		@ check for syscall tracing
@@ -265,6 +268,18 @@ ENTRY(vector_swi)
 #endif
 
 	stmdb	sp!, {r4, r5}			@ push fifth and sixth args
+#ifdef CONFIG_IPIPE
+	stmfd	sp!, {r0-r3, ip}
+	sub	sp, sp, #4
+	add	r1, sp, #S_OFF+24
+	mov	r0, scno
+	bl	__ipipe_syscall_root
+	cmp	r0, #0
+	add	sp, sp, #4
+	ldmfd	sp!, {r0-r3, ip}
+	blt	__ipipe_ret_fast_syscall
+	bgt	__ipipe_fast_exit_syscall
+#endif /* CONFIG_IPIPE */
 	tst	ip, #_TIF_SYSCALL_TRACE		@ are we tracing syscalls?
 	bne	__sys_trace
 
@@ -311,6 +326,9 @@ __sys_trace_return:
 	.type	__cr_alignment, #object
 __cr_alignment:
 	.word	cr_alignment
+#endif
+#ifdef CONFIG_IPIPE
+	.word	__ipipe_syscall_root
 #endif
 	.ltorg
 
@@ -472,3 +490,28 @@ ENTRY(sys_oabi_call_table)
 
 #endif
 
+
+#ifdef CONFIG_FRAME_POINTER
+
+	.text
+	.align 0
+	.type arm_return_addr %function
+	.global arm_return_addr
+
+arm_return_addr:
+	mov	ip, r0
+	mov	r0, fp
+3:
+	cmp	r0, #0
+	beq	1f		@ frame list hit end, bail
+	cmp	ip, #0
+	beq	2f		@ reached desired frame
+	ldr	r0, [r0, #-12]  @ else continue, get next fp
+	sub	ip, ip, #1
+	b	3b
+2:
+	ldr	r0, [r0, #-4]   @ get target return address
+1:
+	mov	pc, lr
+
+#endif

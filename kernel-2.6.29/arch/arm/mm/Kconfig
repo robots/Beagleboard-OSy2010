@@ -718,6 +718,52 @@ config CACHE_XSC3L2
 	help
 	  This option enables the L2 cache on XScale3.
 
+
+config ARM_FCSE
+	bool "Fast Context Switch Extension (EXPERIMENTAL)"
+	depends on EXPERIMENTAL && !SMP && !CPU_32v6 && !CPU_32v7
+	default n
+	help
+	  The Fast Context Switch Extension (FCSE for short) is an extension of
+	  some ARM processors which allows to switch contexts between processes
+	  without flushing cache and saves a few tens of microseconds in the
+	  worst case.
+
+	  Enabling this option makes linux use the FCSE.
+
+	  We propose two modes:
+	  - the guaranteed mode: we guarantee that there will never be any cache
+	    flush when switching context, but this means that there can not be
+	    more than 95 running processes in the system, each with a virtual
+	    memory space smaller than 32MB, and that the shared memory
+	    mappings do not use cache;
+	  - the best effort mode: we allow some cache flushes to happen from
+	    time to time, but do not limit the number of processes or the
+	    virtual memory space available for each process, and the shared
+	    memory mappings use cache.
+
+if ARM_FCSE
+
+choice
+	prompt "FCSE mode"
+	default ARM_FCSE_BEST_EFFORT
+	help
+	  This option allow setting which FCSE mode will be used.
+
+config ARM_FCSE_GUARANTEED
+	bool "guaranteed"
+	help
+	  Select guaranteed mode.
+
+config ARM_FCSE_BEST_EFFORT
+	bool "best effort"
+	help
+	  Select best-effort mode.
+
+endchoice
+
+endif
+
 config ARM_L1_CACHE_SHIFT
 	int
 	default 6 if ARCH_OMAP3

@@ -32,6 +32,7 @@
 #include <asm/processor.h>
 #include <asm/tlbflush.h>
 #include <asm/ptrace.h>
+#include <asm/fcse.h>
 
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
@@ -600,14 +601,14 @@ void flush_tlb_all(void)
 
 void flush_tlb_mm(struct mm_struct *mm)
 {
-	cpumask_t mask = mm->cpu_vm_mask;
+	cpumask_t mask = fcse_tlb_mask(mm);
 
 	on_each_cpu_mask(ipi_flush_tlb_mm, mm, 1, mask);
 }
 
 void flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
 {
-	cpumask_t mask = vma->vm_mm->cpu_vm_mask;
+	cpumask_t mask = fcse_tlb_mask(vma->vm_mm);
 	struct tlb_args ta;
 
 	ta.ta_vma = vma;
@@ -628,7 +629,7 @@ void flush_tlb_kernel_page(unsigned long kaddr)
 void flush_tlb_range(struct vm_area_struct *vma,
                      unsigned long start, unsigned long end)
 {
-	cpumask_t mask = vma->vm_mm->cpu_vm_mask;
+	cpumask_t mask = fcse_tlb_mask(vma->vm_mm);
 	struct tlb_args ta;
 
 	ta.ta_vma = vma;

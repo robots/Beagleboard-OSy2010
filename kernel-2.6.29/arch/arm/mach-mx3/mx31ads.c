@@ -252,6 +252,25 @@ struct sys_timer mx31ads_timer = {
 	.init	= mx31ads_timer_init,
 };
 
+#ifdef CONFIG_IPIPE
+void mx31ads_demux_expio(u32 irq, struct pt_regs *regs)
+{
+        u32 imr_val;
+        u32 int_valid;
+        u32 expio_irq;
+
+        imr_val = __raw_readw(PBC_INTMASK_SET_REG);
+        int_valid = __raw_readw(PBC_INTSTATUS_REG) & imr_val;
+
+        expio_irq = MXC_EXP_IO_BASE;
+        for (; int_valid != 0; int_valid >>= 1, expio_irq++) {
+                if ((int_valid & 1) == 0)
+                        continue;
+                __ipipe_handle_irq(expio_irq, regs);
+        }
+}
+#endif /* CONFIG_IPIPE */
+
 /*
  * The following uses standard kernel macros defined in arch.h in order to
  * initialize __mach_desc_MX31ADS data structure.

@@ -631,6 +631,9 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	unsigned int fault;
 	u16 tinstr = 0;
 
+	if (ipipe_trap_notify(IPIPE_TRAP_ALIGNMENT,regs))
+		return 0;
+
 	instrptr = instruction_pointer(regs);
 
 	fs = get_fs();

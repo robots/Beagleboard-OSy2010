@@ -15,6 +15,7 @@
 #include <linux/notifier.h>
 #include <linux/init.h>
 #include <linux/sysrq.h>
+#include <linux/ipipe_trace.h>
 #include <linux/interrupt.h>
 #include <linux/nmi.h>
 #include <linux/kexec.h>
@@ -286,6 +287,8 @@ int oops_may_print(void)
  */
 void oops_enter(void)
 {
+	ipipe_trace_panic_freeze();
+	ipipe_disable_context_check(ipipe_processor_id());
 	debug_locks_off(); /* can't trust the integrity of the kernel anymore */
 	do_oops_enter_exit();
 }

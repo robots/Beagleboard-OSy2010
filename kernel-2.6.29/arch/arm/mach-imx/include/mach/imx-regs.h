@@ -347,7 +347,16 @@
 #define IMX_INTDISNUM      __REG(IMX_AITC_BASE+0x0c)
 #define IMX_INTENABLEH     __REG(IMX_AITC_BASE+0x10)
 #define IMX_INTENABLEL     __REG(IMX_AITC_BASE+0x14)
+#define IMX_PRIO7          __REG(IMX_AITC_BASE+0x20)
+#define IMX_PRIO6          __REG(IMX_AITC_BASE+0x24)
+#define IMX_PRIO5          __REG(IMX_AITC_BASE+0x28)
+#define IMX_PRIO4          __REG(IMX_AITC_BASE+0x2C)
+#define IMX_PRIO3          __REG(IMX_AITC_BASE+0x30)
+#define IMX_PRIO2          __REG(IMX_AITC_BASE+0x34)
+#define IMX_PRIO1          __REG(IMX_AITC_BASE+0x38)
+#define IMX_PRIO0          __REG(IMX_AITC_BASE+0x3C)
 
+#define IMX_PRIO(x)	   __REG2(IMX_AITC_BASE+0x20,((7-((x)>>3)) <<2) )
 /*
  *  General purpose timers
  */

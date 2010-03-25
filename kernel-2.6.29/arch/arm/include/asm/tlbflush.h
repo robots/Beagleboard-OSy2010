@@ -178,6 +178,7 @@
 #ifndef __ASSEMBLY__
 
 #include <linux/sched.h>
+#include <asm/fcse.h>
 
 struct cpu_tlb_fns {
 	void (*flush_user_range)(unsigned long, unsigned long, struct vm_area_struct *);
@@ -316,7 +317,7 @@ static inline void local_flush_tlb_mm(struct mm_struct *mm)
 	if (tlb_flag(TLB_WB))
 		dsb();
 
-	if (cpu_isset(smp_processor_id(), mm->cpu_vm_mask)) {
+	if (cpu_isset(smp_processor_id(), fcse_tlb_mask(mm))) {
 		if (tlb_flag(TLB_V3_FULL))
 			asm("mcr p15, 0, %0, c6, c0, 0" : : "r" (zero) : "cc");
 		if (tlb_flag(TLB_V4_U_FULL))
@@ -349,12 +350,13 @@ local_flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
 	const int zero = 0;
 	const unsigned int __tlb_flag = __cpu_tlb_flags;
 
-	uaddr = (uaddr & PAGE_MASK) | ASID(vma->vm_mm);
+	uaddr = (fcse_va_to_mva(vma->vm_mm, uaddr) & PAGE_MASK)
+		| ASID(vma->vm_mm);
 
 	if (tlb_flag(TLB_WB))
 		dsb();
 
-	if (cpu_isset(smp_processor_id(), vma->vm_mm->cpu_vm_mask)) {
+	if (cpu_isset(smp_processor_id(), fcse_tlb_mask(vma->vm_mm))) {
 		if (tlb_flag(TLB_V3_PAGE))
 			asm("mcr p15, 0, %0, c6, c0, 0" : : "r" (uaddr) : "cc");
 		if (tlb_flag(TLB_V4_U_PAGE))
@@ -470,7 +472,15 @@ static inline void clean_pmd_entry(pmd_t *pmd)
 /*
  * Convert calls to our calling convention.
  */
-#define local_flush_tlb_range(vma,start,end)	__cpu_flush_user_tlb_range(start,end,vma)
+#define local_flush_tlb_range(vma, start, end)			\
+	({							\
+		struct mm_struct *_mm = (vma)->vm_mm;		\
+		unsigned long _start, _end;			\
+		_start = fcse_va_to_mva(_mm, start);		\
+		_end = fcse_va_to_mva(_mm, end);		\
+		__cpu_flush_user_tlb_range(_start, _end, vma);	\
+	})
+
 #define local_flush_tlb_kernel_range(s,e)	__cpu_flush_kern_tlb_range(s,e)
 
 #ifndef CONFIG_SMP

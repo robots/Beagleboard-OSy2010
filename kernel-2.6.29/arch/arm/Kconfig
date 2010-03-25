@@ -241,6 +241,8 @@ config ARCH_VERSATILE
 config ARCH_AT91
 	bool "Atmel AT91"
 	select GENERIC_GPIO
+	select GENERIC_TIME if IPIPE
+	select GENERIC_CLOCKEVENTS if IPIPE
 	select HAVE_CLK
 	help
 	  This enables support for systems based on the Atmel AT91RM9200,
@@ -839,6 +841,8 @@ config LOCAL_TIMERS
 	  legacy IPI broadcast method.  Local timers allows the system
 	  accounting to be spread across the timer interval, preventing a
 	  "thundering herd" at every timer tick.
+
+source "kernel/ipipe/Kconfig"
 
 config PREEMPT
 	bool "Preemptible Kernel (EXPERIMENTAL)"

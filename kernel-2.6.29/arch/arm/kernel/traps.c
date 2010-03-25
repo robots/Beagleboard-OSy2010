@@ -311,6 +311,11 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	siginfo_t info;
 	void __user *pc;
 
+	/* In kernel mode, the trap was already signaled at the beginning of
+	 * __und_svc in arch/arm/kernel/entry-armv.S */
+	if (user_mode(regs) && ipipe_trap_notify(IPIPE_TRAP_UNDEFINSTR, regs))
+		return;
+
 	/*
 	 * According to the ARM ARM, PC is 2 or 4 bytes ahead,
 	 * depending whether we're in Thumb mode or not.
@@ -705,13 +710,22 @@ void __init trap_init(void)
 	return;
 }
 
+#ifdef CONFIG_IPIPE
+void *__ipipe_tsc_area;
+#endif /* CONFIG_IPIPE */
+
 void __init early_trap_init(void)
 {
 	unsigned long vectors = CONFIG_VECTORS_BASE;
 	extern char __stubs_start[], __stubs_end[];
 	extern char __vectors_start[], __vectors_end[];
+#ifndef CONFIG_IPIPE
 	extern char __kuser_helper_start[], __kuser_helper_end[];
 	int kuser_sz = __kuser_helper_end - __kuser_helper_start;
+#else /* !CONFIG_IPIPE */
+	extern char __ipipe_tsc_area_start[], __kuser_helper_end[];
+	int kuser_sz = __kuser_helper_end - __ipipe_tsc_area_start;
+#endif /* !CONFIG_IPIPE */
 
 	/*
 	 * Copy the vectors, stubs and kuser helpers (in entry-armv.S)
@@ -720,7 +734,13 @@ void __init early_trap_init(void)
 	 */
 	memcpy((void *)vectors, __vectors_start, __vectors_end - __vectors_start);
 	memcpy((void *)vectors + 0x200, __stubs_start, __stubs_end - __stubs_start);
+#ifndef CONFIG_IPIPE
 	memcpy((void *)vectors + 0x1000 - kuser_sz, __kuser_helper_start, kuser_sz);
+#else /* !CONFIG_IPIPE */
+	BUG_ON(0x1000 - kuser_sz < 0x200 + __stubs_end - __stubs_start);
+	memcpy((void *)vectors + 0x1000 - kuser_sz, __ipipe_tsc_area_start, kuser_sz);
+	__ipipe_tsc_area = (void *)vectors + 0x1000 - kuser_sz;
+#endif /* !CONFIG_IPIPE */
 
 	/*
 	 * Copy signal return handlers into the vector page, and
