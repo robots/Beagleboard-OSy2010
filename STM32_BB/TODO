@@ -1,15 +1,13 @@
 
-All of these were tested alone. Need to test in real HW
 
 * CAN controller:
-filters ?
-OK ?
+-
 
 * Power:
-OK
+OK ?
 
 * SYS:
 OK
 
 * SPI_Slave:
-OK ?
+- fix RX0 1 byte offset
