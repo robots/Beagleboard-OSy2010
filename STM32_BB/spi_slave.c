@@ -298,13 +298,6 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0;
 					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
 					break;
-#ifdef ENABLE_CAN_RX1
-				case CAN_RX1:
-					DMA_Callback = CANController_Rx1Handle;
-					DMA1_Channel3->CMAR = (uint32_t)CANController_RX1;
-					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
-					break;
-#endif
 				case PWR_STATUS:
 					DMA1_Channel3->CMAR = (uint32_t)&PWR_Status;
 					DMA1_Channel3->CNDTR = sizeof(PWR_Status);

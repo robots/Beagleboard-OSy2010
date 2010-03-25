@@ -23,7 +23,7 @@
 #define CAN_TIMING 0x12 /* RW - 4 bytes */
 #define CAN_TX     0x13 /* WO - 13 bytes */
 #define CAN_RX0    0x14 /* RO - 13 bytes */
-#define CAN_RX1    0x15 /* RO - 13 bytes */
+//#define CAN_RX1    0x15 /* RO - 13 bytes */
 #define CAN_ERR    0x16 /* RO - 4 bytes*/
 
 /* power related regs*/
