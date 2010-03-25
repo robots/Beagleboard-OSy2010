@@ -4,12 +4,7 @@
  * 2010 Michal Demin
  *
  */
-/*
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-*/
+
 #include "platform.h"
 #include "stm32f10x.h"
 
@@ -115,7 +110,7 @@ void PWR_Init() {
 	EXTI_Init(&EXTI_InitStructure);
 
 	// enable interrupt at NVIC
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 15;//configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 15;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 
@@ -224,7 +219,7 @@ void EXTI2_IRQHandler(void) {
 	}
 
 	// notify host
-	SYS_ChangeIntFlag(SYS_INT_PWRAC);
+	SYS_SetIntFlag(SYS_INT_PWRAC);
 	
 	// Clear the EXTI line 9 pending bit
 	EXTI_ClearITPendingBit(EXTI_Line2);
@@ -241,7 +236,7 @@ void EXTI9_5_IRQHandler(void) {
 	}
 
 	// notify host 
-	SYS_ChangeIntFlag(SYS_INT_PWRALARM);
+	SYS_SetIntFlag(SYS_INT_PWRALARM);
 	
 	// Clear the EXTI line 9 pending bit
 	EXTI_ClearITPendingBit(EXTI_Line5);

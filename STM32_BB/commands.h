@@ -21,15 +21,15 @@
 #define CAN_STATUS 0x10 /* RW - 2 bytes */
 #define CAN_CTRL   0x11 /* RW - 2 bytes */
 #define CAN_TIMING 0x12 /* RW - 4 bytes */
-#define CAN_TX     0x13 /* WO - 13bytes ?*/
-#define CAN_RX0    0x14 /* RO - 13bytes ?*/
-#define CAN_RX1    0x15 /* RO - 13bytes ?*/
-#define CAN_ERR    0x16
+#define CAN_TX     0x13 /* WO - 13 bytes */
+#define CAN_RX0    0x14 /* RO - 13 bytes */
+#define CAN_RX1    0x15 /* RO - 13 bytes */
+#define CAN_ERR    0x16 /* RO - 4 bytes*/
 
 /* power related regs*/
 #define PWR_STATUS 0x20 /* RW - 2 bytes */
 #define PWR_CTRL   0x21 /* RW - 2 bytes */
-#define PWR_I_SET  0x22 /* RW - 4 bytes */ 
+#define PWR_I_SET  0x22 /* RW - 4 bytes */
 #define PWR_DATA   0x23 /* RO - 8 bytes */
 
 #endif

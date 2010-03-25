@@ -4,11 +4,7 @@
  * 2010 Michal Demin
  *
  */
-/*
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-*/
+
 #include "platform.h"
 #include "stm32f10x.h"
 
@@ -147,7 +143,7 @@ void SPI1_Slave_Init() {
 
 	DMA_Cmd(DMA1_Channel2, ENABLE);
 
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;//configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 
@@ -158,23 +154,18 @@ void SPI1_Slave_Init() {
 	NVIC_Init(&NVIC_InitStructure);
 
 	// spi1 ISR does not rely on FreeRTOS api - can be higher priority
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 10; //configLIBRARY_KERNEL_INTERRUPT_PRIORITY - 1;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 10;
 	NVIC_InitStructure.NVIC_IRQChannel = SPI1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
 }
 
-//static void taskDMAWorker( void *pvParameters ) {
-//	(void)pvParameters; // silent :)
 void SPI1_Worker()
 {
-//	DMA_Callback_t tmpCallback;
-//	while (1) {
 	if (DMA_Callback_Run != NULL) {
 		DMA_Callback_Run();
 		DMA_Callback_Run = NULL;
 	}
-//	}
 }
 
 void SPI1_IRQHandler(void) {
@@ -195,7 +186,6 @@ void SPI1_IRQHandler(void) {
 
 /* ISR for DMA1 Channel2 */ 
 void DMA1_Channel2_IRQHandler(void) {
-//	static portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
 
 	// disable DMA
 	DMA1CH2EN = 0;
@@ -207,12 +197,10 @@ void DMA1_Channel2_IRQHandler(void) {
 		DMA1_Channel2->CNDTR = 1;
 		DMA1CH2EN = 1;
 
-		//xQueueSendFromISR( xDMAQueue, &DMA_Callback, &pxHigherPriorityTaskWoken);
 		DMA_Callback_Run = DMA_Callback;
 		DMA_Callback = NULL;
 
 		SPI1_DMA_Type = SPI1_CMD; // next is command
-		//portEND_SWITCHING_ISR( pxHigherPriorityTaskWoken );
 	} else {
 		SPI1_DMA_Type = SPI1_DATA; // data is next
 
@@ -310,11 +298,13 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0;
 					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
 					break;
+#ifdef ENABLE_CAN_RX1
 				case CAN_RX1:
 					DMA_Callback = CANController_Rx1Handle;
 					DMA1_Channel3->CMAR = (uint32_t)CANController_RX1;
 					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
 					break;
+#endif
 				case PWR_STATUS:
 					DMA1_Channel3->CMAR = (uint32_t)&PWR_Status;
 					DMA1_Channel3->CNDTR = sizeof(PWR_Status);
@@ -348,7 +338,6 @@ void DMA1_Channel2_IRQHandler(void) {
 
 /* ISR for DMA1 Channel3 */
 void DMA1_Channel3_IRQHandler(void) {
-//	static portBASE_TYPE pxHigherPriorityTaskWoken = pdFALSE;
 
 	// disable DMA Channel 
 	DMA1CH3EN = 0;
@@ -362,7 +351,6 @@ void DMA1_Channel3_IRQHandler(void) {
 	dummy = SPI1->DR;
 
 	// send data to worker thread
-	//xQueueSendFromISR( xDMAQueue, &DMA_Callback, &pxHigherPriorityTaskWoken);
 	DMA_Callback_Run = DMA_Callback;
 	DMA_Callback = NULL;
 
@@ -372,7 +360,5 @@ void DMA1_Channel3_IRQHandler(void) {
 	// setup dma to receive command
 	DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
 	DMA1_Channel2->CNDTR = 1;
-
-	//portEND_SWITCHING_ISR( pxHigherPriorityTaskWoken );
 }
 

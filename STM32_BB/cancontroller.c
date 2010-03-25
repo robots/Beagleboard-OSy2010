@@ -4,12 +4,7 @@
  * 2010 Michal Demin
  *
  */
-/*
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-*/
+
 #include "platform.h"
 #include "stm32f10x.h"
 
@@ -32,7 +27,10 @@ volatile struct can_message_t CANController_TXBuffer;
 volatile struct can_message_t *CANController_TX;
 
 struct can_buffer_t CANController_RX0Buffer;
+#ifdef ENABLE_CAN_RX1
 struct can_buffer_t CANController_RX1Buffer;
+#endif
+
 
 void CANController_Init(void) {
 	CAN_FilterInitTypeDef CAN_FilterInitStructure;
@@ -40,10 +38,11 @@ void CANController_Init(void) {
 	NVIC_InitTypeDef NVIC_InitStructure;
 
 	CANBuf_Init(&CANController_RX0Buffer);
-	CANBuf_Init(&CANController_RX1Buffer);
-
 	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
+#ifdef ENABLE_CAN_RX1
+	CANBuf_Init(&CANController_RX1Buffer);
 	CANController_RX1 = CANBuf_GetReadAddr(&CANController_RX1Buffer);
+#endif
 	CANController_TX = &CANController_TXBuffer;
 
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);
@@ -58,10 +57,12 @@ void CANController_Init(void) {
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
+	SYS_ClrIntFlag(SYS_INT_CANMASK);
+
 	// Reset CAN1
 	CAN_DeInit(CAN1);
 
-	// CAN filter init - all messages to FIFO0 
+	// CAN filter init - all messages to FIFO0
 	CAN_FilterInitStructure.CAN_FilterNumber=0;
 	CAN_FilterInitStructure.CAN_FilterMode=CAN_FilterMode_IdMask;
 	CAN_FilterInitStructure.CAN_FilterScale=CAN_FilterScale_32bit;
@@ -74,7 +75,7 @@ void CANController_Init(void) {
 	CAN_FilterInit(&CAN_FilterInitStructure);
 
 
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14; //configLIBRARY_KERNEL_INTERRUPT_PRIORITY;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 
@@ -83,10 +84,10 @@ void CANController_Init(void) {
 
 	NVIC_InitStructure.NVIC_IRQChannel = USB_LP_CAN1_RX0_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
-
+#ifdef ENABLE_CAN_RX1
 	NVIC_InitStructure.NVIC_IRQChannel = CAN1_RX1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
-
+#endif
 	NVIC_InitStructure.NVIC_IRQChannel = CAN1_SCE_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
@@ -99,29 +100,28 @@ void CANController_Init(void) {
 }
 
 /* This should be periodicaly called, using timer */
-void CANController_Periodic() {
-	// Check, whether there is some message left in the queue
-	// This can happen when message comes while host clears the interrupt
-	if (CANController_Status & CAN_STAT_RX0) {
-		SYS_ChangeIntFlag(SYS_INT_CANRX0IF);
-	}
-
-	if (CANController_Status & CAN_STAT_RX1) {
-		SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
-	}
+void CANController_Worker() {
+	if ((CAN1->MSR & CAN_MSR_INAK) && (CAN1->MCR & CAN_MCR_INRQ)) {
+		CANController_Status |= CAN_STAT_INAK;
+	} 
 }
 
 /* message has been read from RX0, shift the buffer */
 void CANController_Rx0Handle(void) {
 	uint16_t rx0_count;
 
+	CANController_RX0->flags |= CAN_MSG_INV;
 	CANBuf_ReadDone(&CANController_RX0Buffer);
 	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
-	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+/*	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
 	rx0_count <<= 8;
 	CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | rx0_count;
+	if (rx0_count) {
+		SYS_SetIntFlag(SYS_INT_CANRX0IF);
+	}*/
 }
 
+#ifdef ENABLE_CAN_RX1
 /* message has been read from RX1, shift the buffer */
 void CANController_Rx1Handle(void) {
 	uint16_t rx1_count;
@@ -131,7 +131,12 @@ void CANController_Rx1Handle(void) {
 	rx1_count = CANBuf_GetAvailable(&CANController_RX1Buffer);
 	rx1_count <<= 12;
 	CANController_Status = (CANController_Status & ~CAN_STAT_RX1) | rx1_count;
+	if (rx1_count) {
+		SYS_SetIntFlag(SYS_INT_CANRX1IF);
+	}
+
 }
+#endif
 
 /* new message to be transmitted */
 void CANController_TxHandle(void) {
@@ -139,17 +144,17 @@ void CANController_TxHandle(void) {
 	if (CAN1->TSR & (CAN_TSR_TME0 | CAN_TSR_TME1 | CAN_TSR_TME2)) {
 		mailbox = (CAN1->TSR & CAN_TSR_CODE) >> 24;
 	} else {
-		// nothing empty ? :( this should not happen ! 
+		// nothing empty ? :( this should not happen !
 		// TODO: should we interrupt host with Error ?
 		return;
 	}
 
 	// clear message
 	CAN1->sTxMailBox[mailbox].TIR &= CAN_TI0R_TXRQ;
-	
+
 	// add IDE and RTR fields
 	CAN1->sTxMailBox[mailbox].TIR |= (CANController_TX->flags >> 3) & 0x06;
-	
+
 	// add msg ID
 	if (CANController_TX->flags & CAN_MSG_EID) {
 		CAN1->sTxMailBox[mailbox].TIR |= CANController_TX->id << 3;
@@ -160,7 +165,7 @@ void CANController_TxHandle(void) {
 	// setup the DLC field
 	CAN1->sTxMailBox[mailbox].TDTR &= 0xFFFFFFF0;
 	CAN1->sTxMailBox[mailbox].TDTR |= (CANController_TX->flags & CAN_MSG_SIZE);
-	
+
 	// Set up the data fields
 	CAN1->sTxMailBox[mailbox].TDLR = (((uint32_t)CANController_TX->data[3] << 24) | ((uint32_t)CANController_TX->data[2] << 16) | ((uint32_t)CANController_TX->data[1] << 8) | ((uint32_t)CANController_TX->data[0]));
 	CAN1->sTxMailBox[mailbox].TDHR = (((uint32_t)CANController_TX->data[7] << 24) | ((uint32_t)CANController_TX->data[6] << 16) | ((uint32_t)CANController_TX->data[5] << 8) | ((uint32_t)CANController_TX->data[4]));
@@ -181,9 +186,11 @@ void CANController_ControlHandle(void) {
 	// bxCAN HW reset !
 	if (change & CAN_CTRL_RST) {
 		if (CANController_Control & CAN_CTRL_RST) {
-			//CAN1->MCR |= CAN_MCR_RESET;
-			// call init, it resets can Hw to default state 
-			CANController_Init();
+			CAN1->MCR |= CAN_MCR_RESET;
+			// FIXME
+			// call init, it resets can Hw to default state
+			//CANController_Init();
+			return;
 		}
 	}
 
@@ -233,13 +240,14 @@ void CANController_ControlHandle(void) {
 			CAN1->MCR |= CAN_MCR_TXFP | CAN_MCR_RFLM | CAN_MCR_AWUM;// | CAN_MCR_ABOM;
 			CAN1->MCR &= ~(CAN_MCR_SLEEP | 0x10000); // we don't support sleep, no debug-freeze
 			CAN1->MCR &= ~CAN_MCR_INRQ; // leave init mode
+			CANController_Status &= ~CAN_STAT_INAK;
 		}
 	}
 
 	CANController_Control_Last = CANController_Control;
 }
 
-/* Changes the timming in the bxCAN module 
+/* Changes the timming in the bxCAN module
  * Side-effect: silent and loopback is disabled
  */
 void CANController_TimingHandle(void) {
@@ -274,19 +282,22 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TERR2)?CAN_STAT_TERR:0;
 	}
 
-	// notify host that message was sent !
-	SYS_ChangeIntFlag(SYS_INT_CANTXIF);
 	CANController_Status &= ~CAN_STAT_TXF;
+
+	// notify host that message was sent !
+	SYS_SetIntFlag(SYS_INT_CANTXIF);
 }
 
 /* RX0 fifo interrupt */
 void USB_LP_CAN1_RX0_IRQHandler(void) {
 	// repeat until messages in FIFO0
-	while (CAN1->RF0R&(uint32_t)0x03) {
+	//while (CAN1->RF0R&(uint32_t)0x03)
+	// the NVIC will schedule this interrupt again, thus we allow dma interupt to be processed
+	{
 		static struct can_message_t *RX0;
 		static uint16_t rx0_count;
 
-		RX0 = CANBuf_GetNextWriteAddr(&CANController_RX0Buffer);	
+		RX0 = CANBuf_GetWriteAddr(&CANController_RX0Buffer);
 		RX0->flags = 0x00;
 
 		// check RTR
@@ -298,10 +309,12 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 		RX0->flags |= CAN1->sFIFOMailBox[0].RDTR & CAN_MSG_SIZE;
 
 		// copy msg ID
-		if (CAN1->sFIFOMailBox[0].RIR & 0x04) { // extended id
+		if (CAN1->sFIFOMailBox[0].RIR & 0x04) {
+			// extended id
 			RX0->flags |= CAN_MSG_EID;
 			RX0->id = (uint32_t)0x1FFFFFFF & (CAN1->sFIFOMailBox[0].RIR >> 3);
-		} else { // standard id
+		} else {
+			// standard id
 			RX0->id = (uint32_t)0x000007FF & (CAN1->sFIFOMailBox[0].RIR >> 21);
 		}
 
@@ -318,27 +331,25 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 		// release fifo
 		CAN1->RF0R = CAN_RF0R_RFOM0;
 
-		if (CANBuf_Empty(&CANController_RX0Buffer) == 1) {
-			// Advance the ring buffer
-			CANBuf_Written(&CANController_RX0Buffer);
-			
+		if (CANBuf_Empty(&CANController_RX0Buffer)) {
 			CANController_RX0 = RX0;
-
-			// notify host by interrupt
-			SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
-
-		} else {
-			// Move the ring buffer
-			CANBuf_Written(&CANController_RX0Buffer);
-			SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
 		}
 
+		// Advance the ring buffer
+		CANBuf_WriteDone(&CANController_RX0Buffer);
+			
+		// update Status 
 		rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
 		rx0_count <<= 8;
 		CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | (rx0_count & CAN_STAT_RX0);
+
+		// notify host by interrupt
+		SYS_SetIntFlag(SYS_INT_CANRX0IF);
+
 	}
 }
 
+#ifdef ENABLE_CAN_RX1
 /* RX1 fifo interrupt */
 void CAN1_RX1_IRQHandler(void) {
 	// repeat until messages in FIFO1
@@ -346,7 +357,7 @@ void CAN1_RX1_IRQHandler(void) {
 		static struct can_message_t *RX1;
 		static uint16_t rx1_count;
 
-		RX1 = CANBuf_GetNextWriteAddr(&CANController_RX1Buffer);
+		RX1 = CANBuf_GetWriteAddr(&CANController_RX1Buffer);
 		RX1->flags = 0x00;
 
 		// check RTR
@@ -380,16 +391,16 @@ void CAN1_RX1_IRQHandler(void) {
 
 		if (CANBuf_Empty(&CANController_RX1Buffer) == 1) {
 			// Advance the ring buffer
-			CANBuf_Written(&CANController_RX1Buffer);
+			CANBuf_WriteDone(&CANController_RX1Buffer);
 			
 			CANController_RX1 = RX1;
 
 			// notify host by interrupt
-			SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
+			SYS_SetIntFlag(SYS_INT_CANRX1IF);
 		} else {
 			// Move the ring buffer
-			CANBuf_Written(&CANController_RX1Buffer);
-			SYS_ChangeIntFlag(SYS_INT_CANRX1IF);
+			CANBuf_WriteDone(&CANController_RX1Buffer);
+			SYS_SetIntFlag(SYS_INT_CANRX1IF);
 		}
 
 		rx1_count = CANBuf_GetAvailable(&CANController_RX1Buffer);
@@ -397,6 +408,7 @@ void CAN1_RX1_IRQHandler(void) {
 		CANController_Status = (CANController_Status & ~CAN_STAT_RX1) | (rx1_count & CAN_STAT_RX1);
 	}
 }
+#endif
 
 /* status change and error
  * This ISR is called periodicaly while error condition persists !
@@ -405,7 +417,7 @@ void CAN1_SCE_IRQHandler(void) {
 
 	if (CAN1->ESR & (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF)) {
 		// if error happened, copy the state
-		CANController_Error =	CAN1->ESR;
+		CANController_Error = CAN1->ESR;
 
 		// clean flag
 		CAN1->ESR &= ~ (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF);
@@ -415,7 +427,7 @@ void CAN1_SCE_IRQHandler(void) {
 		CAN1->MSR &= ~CAN_MSR_ERRI;
 
 		// notify host
-		SYS_ChangeIntFlag(SYS_INT_CANERRIF);
+		SYS_SetIntFlag(SYS_INT_CANERRIF);
 	}
 }
 

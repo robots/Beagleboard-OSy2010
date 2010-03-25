@@ -42,5 +42,6 @@
 
 #define PWR_ALARM()        GPIO_ReadInputDataBit(PWR_ALARM_GPIO, PWR_ALARM_PIN)
 #define PWR_ACPRES()       GPIO_ReadInputDataBit(PWR_ACPRES_GPIO, PWR_ACPRES_PIN)
+
 #endif
 

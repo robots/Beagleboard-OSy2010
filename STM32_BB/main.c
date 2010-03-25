@@ -5,11 +5,6 @@
  *
  */
 
-/*#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-*/
 #include "stm32f10x.h"
 #include "spi_slave.h"
 #include "sys.h"
@@ -43,11 +38,6 @@ void RCC_Configuration(void)
 
 	// Enable GPIO for led
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB, ENABLE);
-/*
-	EXTI_DeInit();
-	GPIO_AFIODeInit();
-*/
-//	RCC_MCOConfig(RCC_MCO_PLLCLK_Div2);
 }
 
 void GPIO_Configuration(void)
@@ -72,9 +62,9 @@ void GPIO_Configuration(void)
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	// pins to HiZ state
-	LED_YELLOW(Bit_SET);
-	LED_GREEN(Bit_RESET);
 	LED_RED(Bit_SET);
+	LED_GREEN(Bit_RESET);
+	LED_YELLOW(Bit_SET);
 }
 
 int main(void)
@@ -84,7 +74,7 @@ int main(void)
 
 	// NVIC configuration
 	NVIC_Configuration();
-	NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
+	//NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
 	// Configure the GPIO ports
 	GPIO_Configuration();
@@ -97,36 +87,7 @@ int main(void)
 
 	while (1) {
 		SPI1_Worker();
+		CANController_Worker();
 	}
-	//vTaskStartScheduler();
 }
-/*
-void vApplicationStackOverflowHook( xTaskHandle *pxTask, signed char *pcTaskName ) {
-	(void)pxTask;
-	(void)pcTaskName;
-
-	while (1);
-}
-
-#define PERIOD ((portTickType) 1000 / portTICK_RATE_MS)
-void vApplicationTickHook( void ) {
-//DISABLED
-	static uint32_t uiTickCount = 0;
-	static uint32_t b = 0xCAFEBABE;
-	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
-
-	if (uiTickCount >= PERIOD) {
-		uiTickCount = 0;
-		xHigherPriorityTaskWoken = pdFALSE;
-		b++;
-	}
-	uiTickCount ++;
-
-}
-
-void vApplicationIdleHook( void ) {
-	static uint32_t bla;
-	bla++;
-}
-*/
 
