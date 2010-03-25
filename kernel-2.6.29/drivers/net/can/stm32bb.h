@@ -59,6 +59,7 @@
 #define CAN_STAT_TXF   0x0001 /* TX fifo Full */
 #define CAN_STAT_ALST  0x0004 /* Arbitration lost for last message */
 #define CAN_STAT_TERR  0x0008 /* Transmit error for last message */
+#define CAN_STAT_INAK  0x0010 /* Initialization ACK */
 #define CAN_STAT_RX0   0x0F00 /* no of messages queued in RX0 */
 #define CAN_STAT_RX1   0xF000 /* no of messages queued in RX1 */
 
@@ -83,6 +84,7 @@
 #define CAN_MSG_SIZE	0x0F // DLC[0:3]
 #define CAN_MSG_RTR   0x10 // RTR[4]
 #define CAN_MSG_EID   0x20 // EID[5]
+#define CAN_MSG_INV   0x40 // EID[5]
 
 
 #define PWR_CTRL_ADC 0x0001 /* Enable ADC sampling */
