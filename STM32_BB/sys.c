@@ -4,12 +4,7 @@
  * 2010 Michal Demin
  *
  */
-/*
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-*/
+
 #include "platform.h"
 #include "stm32f10x.h"
 
@@ -33,14 +28,23 @@ void SYS_Init() {
 	SYS_InterruptFlag = 0x0000;
 
 	// leave the pin in Hi-Z
+	LED_YELLOW(Bit_SET);
 	SPI_INT_WRITE(Bit_SET);
 }
 
-void SYS_ChangeIntFlag(uint16_t in) {
+void SYS_SetIntFlag(uint16_t in) {
 	SYS_InterruptFlag |= in;
 	if (SYS_InterruptEnable & in) {
 		SPI_INT_WRITE(Bit_RESET);
 		LED_YELLOW(Bit_RESET);
+	}
+}
+
+void SYS_ClrIntFlag(uint16_t in) {
+	SYS_InterruptFlag &= ~in;
+	if ((SYS_InterruptEnable & in) == 0x0000) {
+		SPI_INT_WRITE(Bit_SET);
+		LED_YELLOW(Bit_SET);
 	}
 }
 
@@ -56,7 +60,6 @@ void SYS_ResetHandler(void) {
 		SYS_Reset = 0x0000;
 
 		// do reset
-		// TODO: add RCC reset to main, to reset peripherals !
 		NVIC_SystemReset();
 	}
 }
