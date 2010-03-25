@@ -21,6 +21,16 @@ config CAN_DEV
 	  support. This is the standard library for CAN drivers.
 	  If unsure, say Y.
 
+config CAN_DEV_SYSFS
+	bool "Support for sysfs interface (deprecated)"
+	depends on CAN_DEV && SYSFS
+	default N
+	---help---
+	  Adds support for the legacy sysfs interface to configure CAN
+	  devices. If possible, please use the new netlink interface
+	  instead.
+	  If unsure, say N.
+
 config CAN_CALC_BITTIMING
 	bool "CAN bit-timing calculation"
 	depends on CAN_DEV

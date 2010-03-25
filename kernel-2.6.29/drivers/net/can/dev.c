@@ -179,11 +179,13 @@ static int can_calc_bittiming(struct net_device *dev, struct can_bittiming *bt)
 #endif /* CONFIG_CAN_CALC_BITTIMING */
 
 
+#ifdef CONFIG_CAN_DEV_SYSFS
 int can_sample_point(struct can_bittiming *bt)
 {
 	return ((bt->prop_seg + bt->phase_seg1 + 1) * 1000) /
 		(bt->prop_seg + bt->phase_seg1 + bt->phase_seg2 + 1);
 }
+#endif
 
 /*
  * Checks the validity of the specified bit-timing parameters prop_seg,
