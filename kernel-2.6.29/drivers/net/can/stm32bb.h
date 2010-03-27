@@ -95,5 +95,17 @@
 #define PWR_STAT_ALARM 0x0001 /* ALARM state */
 #define PWR_STAT_ACPRE 0x0002 /* AC present */
 
+struct stm32bb_pwr_t {
+	uint16_t i_bat;
+	uint16_t i_sys;
+	uint16_t v_bat;
+	uint16_t v_ac;
+};
+
+struct stm32bb_iset_t {
+	uint16_t i_ac;
+	uint16_t i_bat;
+};
+							 
 #endif
 

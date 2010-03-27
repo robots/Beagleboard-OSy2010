@@ -1,22 +1,8 @@
 /*
- * CAN bus driver for Microchip 251x CAN Controller with SPI Interface
+ * CAN bus driver for STM32 based CAN Controller
  *
- * MCP2510 support and bug fixes by Christian Pellegrin
+ * Based on MCP251x CAN controller driver by Christian Pellegrin
  * <chripell@evolware.org>
- *
- * Copyright 2009 Christian Pellegrin EVOL S.r.l.
- *
- * Copyright 2007 Raymarine UK, Ltd. All Rights Reserved.
- * Written under contract by:
- *   Chris Elston, Katalix Systems, Ltd.
- *
- * Based on Microchip MCP251x CAN controller driver written by
- * David Vrabel, Copyright 2006 Arcom Control Systems Ltd.
- *
- * Based on CAN bus driver for the CCAN controller written by
- * - Sascha Hauer, Marc Kleine-Budde, Pengutronix
- * - Simon Kallweit, intefo AG
- * Copyright 2007
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the version 2 of the GNU General Public License
@@ -30,30 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- *
- *
- * Your platform definition file should specify something like:
- *
- * static struct mcp251x_platform_data mcp251x_info = {
- *         .oscillator_frequency = 8000000,
- *         .board_specific_setup = &mcp251x_setup,
- *         .model = CAN_MCP251X_MCP2510,
- *         .transceiver_enable = NULL,
- * };
- *
- * static struct spi_board_info spi_board_info[] = {
- *         {
- *                 .modalias = "mcp251x",
- *                 .platform_data = &mcp251x_info,
- *                 .irq = IRQ_EINT13,
- *                 .max_speed_hz = 2*1000*1000,
- *                 .chip_select = 2,
- *         },
- * };
- *
- * Please see mcp251x.h for a description of the fields in
- * struct mcp251x_platform_data.
  *
  */
 
@@ -76,6 +38,7 @@
 #include <socketcan/can/core.h>
 #include <socketcan/can/dev.h>
 #include <socketcan/can/platform/stm32bb.h>
+#include <linux/power_supply.h>
 #include "stm32bb.h"
 
 
@@ -136,35 +99,14 @@ struct stm32bb_priv {
 	int after_suspend;
 #define AFTER_SUSPEND_UP 1
 #define AFTER_SUSPEND_DOWN 2
-#define AFTER_SUSPEND_RESTART 8
+//#define AFTER_SUSPEND_RESTART 8
 	int restart_tx;
+	struct stm32bb_pwr_t pwr_data;
+	struct stm32bb_iset_t pwr_iset;
 };
 
-static void stm32bb_clean(struct net_device *net)
-{
-	struct stm32bb_priv *priv = netdev_priv(net);
-
-	net->stats.tx_errors++;
-	if (priv->tx_skb)
-		dev_kfree_skb(priv->tx_skb);
-	if (priv->tx_len)
-		can_free_echo_skb(priv->net, 0);
-	priv->tx_skb = NULL;
-	priv->tx_len = 0;
-}
-
 /*
- * Note about handling of error return of mcp251x_spi_trans: accessing
- * registers via SPI is not really different conceptually than using
- * normal I/O assembler instructions, although it's much more
- * complicated from a practical POV. So it's not advisable to always
- * check the return value of this function. Imagine that every
- * read{b,l}, write{b,l} and friends would be bracketed in "if ( < 0)
- * error();", it would be a great mess (well there are some situation
- * when exception handling C++ like could be useful after all). So we
- * just check that transfers are OK at the beginning of our
- * conversation with the chip and to avoid doing really nasty things
- * (like injecting bogus packets in the network stack).
+ * low level HW functions 
  */
 static int stm32bb_spi_trans(struct spi_device *spi, int len)
 {
@@ -227,7 +169,7 @@ static void stm32bb_write_reg(struct spi_device *spi, uint8_t reg, uint32_t val,
 
 	mutex_lock(&priv->spi_lock);
 
-	priv->spi_tx_buf[0] = reg | 0x80;
+	priv->spi_tx_buf[0] = reg | CMD_WRITE;
 	priv->spi_tx_buf[1] = 0x00;
 
 	buf[0] = (uint8_t) (0xff & val);
@@ -272,8 +214,6 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 	mutex_unlock(&priv->spi_lock);
 }
 
-//toto je opat kombinacia 2 funkcii z mcp251x
-//nacita CAN_RX0,1 podla buf_idx
 static void stm32bb_hw_rx(struct spi_device *spi, int rx_idx)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
@@ -297,6 +237,7 @@ static void stm32bb_hw_rx(struct spi_device *spi, int rx_idx)
 
 	if (buf[0] & CAN_MSG_INV) {
 		mutex_unlock(&priv->spi_lock);
+		dev_err(&spi->dev, "Invalid message received - dropping\n");
 		dev_kfree_skb(skb);
 		return;
 	}
@@ -317,31 +258,43 @@ static void stm32bb_hw_rx(struct spi_device *spi, int rx_idx)
 	netif_rx(skb);
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-static int stm32bb_hard_start_xmit(struct sk_buff *skb, struct net_device *net)
-#else
-static netdev_tx_t stm32bb_hard_start_xmit(struct sk_buff *skb,
-					   struct net_device *net)
-#endif
+static void stm32bb_get_measurement(struct spi_device *spi)
 {
-	struct stm32bb_priv *priv = netdev_priv(net);
-	struct spi_device *spi = priv->spi;
+	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
+	uint8_t *buf = priv->spi_rx_buf+2;
 
-	if (priv->tx_skb || priv->tx_len) {
-		dev_warn(&spi->dev, "hard_xmit called while tx busy\n");
-		netif_stop_queue(net);
-		return NETDEV_TX_BUSY;
-	}
+	mutex_lock(&priv->spi_lock);
 
-	if (can_dropped_invalid_skb(net, skb))
-		return NETDEV_TX_OK;
+	priv->spi_tx_buf[0] = PWR_DATA;
+	priv->spi_tx_buf[1] = 0x00;
 
-	netif_stop_queue(net);
-	priv->tx_skb = skb;
-	net->trans_start = jiffies;
-	queue_work(priv->wq, &priv->tx_work);
+	stm32bb_spi_trans(spi, 2+8);// 2 cmd + 8
 
-	return NETDEV_TX_OK;
+	priv->pwr_data.i_bat = buf[0] | buf[1] << 8;
+	priv->pwr_data.i_sys = buf[2] | buf[3] << 8;
+	priv->pwr_data.v_bat = buf[4] | buf[5] << 8;
+	priv->pwr_data.v_ac  = buf[6] | buf[7] << 8;
+	mutex_unlock(&priv->spi_lock);
+}
+
+static void stm32bb_set_current(struct spi_device *spi)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
+	uint8_t *buf = priv->spi_tx_buf+2;
+
+	mutex_lock(&priv->spi_lock);
+
+	priv->spi_tx_buf[0] = PWR_I_SET | CMD_WRITE;
+	priv->spi_tx_buf[1] = 0x00;
+
+	buf[0] = 0xff & priv->pwr_iset.i_ac;
+	buf[1] = 0xff & (priv->pwr_iset.i_ac >> 8);
+
+	buf[2] = 0xff & priv->pwr_iset.i_bat;
+	buf[3] = 0xff & (priv->pwr_iset.i_bat >> 8);
+
+	stm32bb_spi_trans(spi, 2+8);// 2 cmd + 8
+	mutex_unlock(&priv->spi_lock);
 }
 
 static void stm32bb_can_sleep(struct spi_device *spi)
@@ -410,7 +363,6 @@ static int stm32bb_do_set_bittiming(struct net_device *net)
 	struct stm32bb_priv *priv = netdev_priv(net);
 	struct can_bittiming *bt = &priv->can.bittiming;
 	struct spi_device *spi = priv->spi;
-
 	uint32_t timing_reg = 0;
 	
 	// other timings 
@@ -429,7 +381,19 @@ static int stm32bb_do_set_bittiming(struct net_device *net)
 	return 0;
 }
 
-static int stm32bb_setup(struct net_device *net, struct stm32bb_priv *priv,
+static int stm32bb_pwr_setup(struct stm32bb_priv *priv)
+{
+	struct spi_device *spi = priv->spi;
+	uint16_t reg;
+
+	reg = stm32bb_read_reg(spi, PWR_CTRL, 2);
+	reg |= PWR_CTRL_ADC | PWR_CTRL_PWM | PWR_CTRL_EN;
+	stm32bb_write_reg(spi, PWR_CTRL, reg, 2);
+
+	return 0;
+}
+
+static int stm32bb_can_setup(struct net_device *net, struct stm32bb_priv *priv,
 			 struct spi_device *spi)
 {
 	if (priv->can.state != CAN_STATE_STOPPED) {
@@ -443,15 +407,14 @@ static int stm32bb_setup(struct net_device *net, struct stm32bb_priv *priv,
 
 static void stm32bb_hw_reset(struct spi_device *spi)
 {
-	//struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
-	//int ret;
-	//unsigned long timeout;
-
 	/* write reset magic to reset the device */
-	stm32bb_write_reg(spi, SYS_RESET, 0xBABE, 2);
+	stm32bb_write_reg(spi, SYS_RESET, SYS_RESET_MAGIC, 2);
 
-	/* Wait for reset to finish */
-	mdelay(500);
+	/* Wait for reset to finish
+	 * The value here depends on the version of FW
+	 * DEBUG version includes extra startup delay
+	 */
+	mdelay(1000);
 }
 
 static void stm32bb_can_reset(struct spi_device *spi)
@@ -495,8 +458,8 @@ static int stm32bb_do_set_mode(struct net_device *net, enum can_mode mode)
 		/* We have to delay work since SPI I/O may sleep */
 		priv->can.state = CAN_STATE_ERROR_ACTIVE;
 		priv->restart_tx = 1;
-		if (priv->can.restart_ms == 0)
-			priv->after_suspend = AFTER_SUSPEND_RESTART;
+/*		if (priv->can.restart_ms == 0)
+			priv->after_suspend = AFTER_SUSPEND_RESTART;*/
 		queue_work(priv->wq, &priv->irq_work);
 		break;
 	default:
@@ -510,7 +473,7 @@ static int stm32bb_hw_probe(struct spi_device *spi)
 {
 	uint16_t id;
 
-//	stm32bb_hw_reset(spi);
+	stm32bb_hw_reset(spi);
 
 	id = (uint16_t)stm32bb_read_reg(spi, SYS_ID, 2);
 
@@ -520,16 +483,47 @@ static int stm32bb_hw_probe(struct spi_device *spi)
 	return (id == SYS_ID_MAGIC) ? 1 : 0;
 }
 
-static irqreturn_t stm32bb_can_isr(int irq, void *dev_id)
+/*
+ * netdev interface functions
+ */
+static void stm32bb_clean(struct net_device *net)
 {
-	struct net_device *net = (struct net_device *)dev_id;
 	struct stm32bb_priv *priv = netdev_priv(net);
 
-	/* Schedule bottom half */
-	if (!work_pending(&priv->irq_work))
-		queue_work(priv->wq, &priv->irq_work);
+	net->stats.tx_errors++;
+	if (priv->tx_skb)
+		dev_kfree_skb(priv->tx_skb);
+	if (priv->tx_len)
+		can_free_echo_skb(priv->net, 0);
+	priv->tx_skb = NULL;
+	priv->tx_len = 0;
+}
 
-	return IRQ_HANDLED;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+static int stm32bb_hard_start_xmit(struct sk_buff *skb, struct net_device *net)
+#else
+static netdev_tx_t stm32bb_hard_start_xmit(struct sk_buff *skb,
+					   struct net_device *net)
+#endif
+{
+	struct stm32bb_priv *priv = netdev_priv(net);
+	struct spi_device *spi = priv->spi;
+
+	if (priv->tx_skb || priv->tx_len) {
+		dev_warn(&spi->dev, "hard_xmit called while tx busy\n");
+		netif_stop_queue(net);
+		return NETDEV_TX_BUSY;
+	}
+
+	if (can_dropped_invalid_skb(net, skb))
+		return NETDEV_TX_OK;
+
+	netif_stop_queue(net);
+	priv->tx_skb = skb;
+	net->trans_start = jiffies;
+	queue_work(priv->wq, &priv->tx_work);
+
+	return NETDEV_TX_OK;
 }
 
 static int stm32bb_open(struct net_device *net)
@@ -553,7 +547,7 @@ static int stm32bb_open(struct net_device *net)
 	priv->tx_len = 0;
 
 	stm32bb_can_reset(spi);
-	stm32bb_setup(net, priv, spi);
+	stm32bb_can_setup(net, priv, spi);
 	stm32bb_set_normal_mode(spi);
 
 	return 0;
@@ -581,6 +575,17 @@ static int stm32bb_stop(struct net_device *net)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,28)
+static const struct net_device_ops stm32bb_netdev_ops = {
+	.ndo_open = stm32bb_open,
+	.ndo_stop = stm32bb_stop,
+	.ndo_start_xmit = stm32bb_hard_start_xmit,
+};
+#endif
+
+/*
+ * workers
+ */
 static void stm32bb_tx_work_handler(struct work_struct *ws)
 {
 	struct stm32bb_priv *priv = container_of(ws, struct stm32bb_priv,
@@ -618,14 +623,15 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 	uint16_t i;
 	int can_id_res = 0;
 
-	// TODO: this probably wrong !
-	// shouldn't this be moved to separate work handler ???
+	/* TODO: this probably wrong ! Test TEst TEST !
+	 * shouldn't this be moved to separate work handler ???
+	 */
 	if (priv->after_suspend || priv->restart_tx) {
 		mdelay(10);
-		if ((priv->restart_tx) || (priv->after_suspend & (AFTER_SUSPEND_RESTART | AFTER_SUSPEND_UP))) {
+		if ((priv->restart_tx) || (priv->after_suspend & AFTER_SUSPEND_UP)) {
 			dev_warn(&spi->dev, "ISR: Restarting CAN hw !\n");
 			stm32bb_can_reset(spi);
-			stm32bb_setup(net, priv, spi);
+			stm32bb_can_setup(net, priv, spi);
 			stm32bb_set_normal_mode(spi);
 		} else {
 			/* we were just resumed from sleep
@@ -777,7 +783,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 				}
 			}
 		} // end of can
-/*
+
 		if (intf & SYS_INT_PWRMASK) {
 			uint16_t pwr_status;
 			pwr_status = stm32bb_read_reg(spi, PWR_STATUS, 2);
@@ -796,18 +802,238 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 					printk("Adapter unpluged !!\n");
 				}
 			}
-		} // end of power */
+		} // end of power
 	} // while
 }
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,28)
-static const struct net_device_ops stm32bb_netdev_ops = {
-	.ndo_open = stm32bb_open,
-	.ndo_stop = stm32bb_stop,
-	.ndo_start_xmit = stm32bb_hard_start_xmit,
-};
-#endif
+static irqreturn_t stm32bb_can_isr(int irq, void *dev_id)
+{
+	struct net_device *net = (struct net_device *)dev_id;
+	struct stm32bb_priv *priv = netdev_priv(net);
 
+	/* Schedule bottom half */
+	if (!work_pending(&priv->irq_work))
+		queue_work(priv->wq, &priv->irq_work);
+
+	return IRQ_HANDLED;
+}
+
+/*
+ * POWER interface 
+ */
+static int stm32bb_ac_get_prop(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(psy->dev->parent);
+	struct spi_device *spi = priv->spi;
+	int ret = 0;
+	uint16_t pwr_status;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		pwr_status = stm32bb_read_reg(spi, PWR_STATUS, 2);
+		val->intval = !!(pwr_status & PWR_STAT_ACPRE);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		stm32bb_get_measurement(spi);
+		val->intval = (int)priv->pwr_data.v_ac;
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
+}
+
+static enum power_supply_property stm32bb_ac_props[] = {
+	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+};
+
+static struct power_supply stm32bb_ac = {
+	.name = "stm32bb-ac",
+	.type = POWER_SUPPLY_TYPE_MAINS,
+	.properties = stm32bb_ac_props,
+	.num_properties = ARRAY_SIZE(stm32bb_ac_props),
+	.get_property = stm32bb_ac_get_prop,
+};
+
+static int stm32bb_sys_get_prop(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(psy->dev->parent);
+	struct spi_device *spi = priv->spi;
+	int ret = 0;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		val->intval = 1;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		stm32bb_get_measurement(spi);
+		val->intval = (int)priv->pwr_data.i_sys;
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
+}
+
+static enum power_supply_property stm32bb_sys_props[] = {
+	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+};
+
+static struct power_supply stm32bb_sys = {
+	.name = "stm32bb-sys",
+	.type = POWER_SUPPLY_TYPE_MAINS,
+	.properties = stm32bb_sys_props,
+	.num_properties = ARRAY_SIZE(stm32bb_sys_props),
+	.get_property = stm32bb_sys_get_prop,
+};
+
+static int stm32bb_bat_get_prop(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(psy->dev->parent);
+	struct spi_device *spi = priv->spi;
+	int ret = 0;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		val->intval = 1;
+		break;
+	case POWER_SUPPLY_PROP_PRESENT:
+		val->intval = 1; /* present */
+		break;
+	case POWER_SUPPLY_PROP_TECHNOLOGY:
+		val->intval = 0; /* invalid */
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		stm32bb_get_measurement(spi);
+		val->intval = (int)priv->pwr_data.i_bat;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		stm32bb_get_measurement(spi);
+		val->intval = (int)priv->pwr_data.v_bat;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
+		val->intval = (int)13600;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
+		val->intval = (int)11700;
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
+}
+
+static enum power_supply_property stm32bb_bat_props[] = {
+	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_TECHNOLOGY,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
+	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
+	POWER_SUPPLY_PROP_CURRENT_NOW
+};
+
+static struct power_supply stm32bb_bat = {
+	.name = "stm32bb-bat",
+	.type = POWER_SUPPLY_TYPE_BATTERY,
+	.properties = stm32bb_bat_props,
+	.num_properties = ARRAY_SIZE(stm32bb_bat_props),
+	.get_property = stm32bb_bat_get_prop,
+};
+
+/*
+ * sysfs stuff
+ */
+static ssize_t
+show_chgcur(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(dev);
+//	struct spi_device *spi = priv->spi;
+
+	return sprintf(buf, "%u %u\n", priv->pwr_iset.i_ac, priv->pwr_iset.i_bat);
+}
+
+static ssize_t set_chgcur(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(dev);
+	struct spi_device *spi = priv->spi;
+	unsigned i_ac;
+	unsigned i_bat;
+	int ret;
+
+	ret = sscanf(buf, "%u %u\n", &i_ac, &i_bat);
+	if (ret != 2)
+		return -EINVAL;
+
+	priv->pwr_iset.i_ac = i_ac & 0x3FFF;
+	priv->pwr_iset.i_bat = i_bat & 0x3FFF;
+
+	stm32bb_set_current(spi);
+
+	return count;
+}
+
+static DEVICE_ATTR(charge_current, S_IRUGO | S_IWUSR, show_chgcur, set_chgcur);
+
+static ssize_t
+show_pwrctrl(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(dev);
+	struct spi_device *spi = priv->spi;
+	uint16_t reg;
+
+	reg = stm32bb_read_reg(spi, PWR_CTRL, 2);
+
+	return sprintf(buf, "%u\n", reg & 0x0f);
+}
+
+static ssize_t set_pwrctrl(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(dev);
+	struct spi_device *spi = priv->spi;
+	unsigned reg;
+	int ret;
+
+	ret = sscanf(buf, "%u\n", &reg);
+	if (ret != 1)
+		return -EINVAL;
+
+	reg &= 0x000f;
+	stm32bb_write_reg(spi, PWR_CTRL, reg, 2);
+
+	return count;
+}
+
+static DEVICE_ATTR(pwr_control, S_IRUGO | S_IWUSR, show_pwrctrl, set_pwrctrl);
+
+static struct attribute *stm32bb_sysfs_entries[] = {
+	&dev_attr_charge_current.attr,
+	&dev_attr_pwr_control.attr,
+	NULL,
+};
+
+static struct attribute_group stm32bb_attr_group = {
+	.name	= "control",			/* put in device directory */
+	.attrs	= stm32bb_sysfs_entries,
+};
+
+
+/*
+ * module functions 
+ */
 static int __devinit stm32bb_can_probe(struct spi_device *spi)
 {
 	struct net_device *net;
@@ -839,8 +1065,8 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 	priv->can.bittiming_const = &stm32bb_bittiming_const;
 	priv->can.do_set_mode = stm32bb_do_set_mode;
 	priv->can.clock.freq = 36000000;
-	priv->can.ctrlmode_supported = //CAN_CTRLMODE_3_SAMPLES |
-		CAN_CTRLMODE_LOOPBACK | CAN_CTRLMODE_LISTENONLY | CAN_CTRLMODE_ONE_SHOT;
+	priv->can.ctrlmode_supported = CAN_CTRLMODE_LOOPBACK | 
+		CAN_CTRLMODE_LISTENONLY | CAN_CTRLMODE_ONE_SHOT;
 	priv->net = net;
 	dev_set_drvdata(&spi->dev, priv);
 
@@ -901,6 +1127,7 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 	if (stm32bb_spi_speed != 0) {
 		spi->max_speed_hz = stm32bb_spi_speed * 1000;
 	}
+	dev_info(&spi->dev, "SPI speed = %d Hz\n", spi->max_speed_hz);
 	spi->bits_per_word = 8;
 	spi_setup(spi);
 
@@ -920,11 +1147,43 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 	if (pdata->transceiver_enable)
 		pdata->transceiver_enable(0);
 
+	stm32bb_pwr_setup(priv);
+	/* sync with hw */
+	priv->pwr_iset.i_bat = 0;
+	priv->pwr_iset.i_ac = 0;
+
+	ret = power_supply_register(&spi->dev, &stm32bb_ac);
+	if (ret)
+		goto ac_failed;
+
+	ret = power_supply_register(&spi->dev, &stm32bb_sys);
+	if (ret)
+		goto sys_failed;
+
+	ret = power_supply_register(&spi->dev, &stm32bb_bat);
+	if (ret)
+		goto battery_failed;
+
+	ret = sysfs_create_group(&spi->dev.kobj, &stm32bb_attr_group);
+	if (ret) {
+		dev_err(&spi->dev, "failed to create sysfs entries\n");
+		goto sysfs_failed;
+	}
+
 	ret = register_candev(net);
 	if (!ret) {
 		dev_info(&spi->dev, "probed\n");
 		return ret;
 	}
+	sysfs_remove_group(&spi->dev.kobj, &stm32bb_attr_group);
+sysfs_failed:
+	power_supply_unregister(&stm32bb_bat);
+battery_failed:
+	power_supply_unregister(&stm32bb_sys);
+sys_failed:
+	power_supply_unregister(&stm32bb_ac);
+ac_failed:
+	free_irq(spi->irq, net);
 error_probe:
 	if (!stm32bb_enable_dma)
 		kfree(priv->spi_rx_buf);
@@ -950,6 +1209,10 @@ static int __devexit stm32bb_can_remove(struct spi_device *spi)
 	unregister_candev(net);
 	free_candev(net);
 
+	sysfs_remove_group(&spi->dev.kobj, &stm32bb_attr_group);
+	power_supply_unregister(&stm32bb_ac);
+	power_supply_unregister(&stm32bb_sys);
+	power_supply_unregister(&stm32bb_bat);
 	free_irq(spi->irq, net);
 
 	priv->force_quit = 1;
@@ -1039,5 +1302,5 @@ module_exit(stm32bb_can_exit);
 
 MODULE_AUTHOR("Pavol Jusko, "
 	      "Michal demin");
-MODULE_DESCRIPTION("Our arm cortex BB can controller");
+MODULE_DESCRIPTION("Our STM32-based CAN Controller");
 MODULE_LICENSE("GPL v2");

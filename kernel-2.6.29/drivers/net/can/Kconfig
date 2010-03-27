@@ -56,10 +56,10 @@ config CAN_DEBUG_DEVICES
 	  on.
 
 config CAN_STM32BB
-	depends on CAN_DEV && SPI
+	depends on CAN_DEV && SPI && POWER_SUPPLY
 	tristate "STM32BB"
 	---help---
-		Bla bla
+	  Bla bla
 
 config CAN_MCP251X
 	tristate "Microchip MCP251x SPI CAN controllers"
