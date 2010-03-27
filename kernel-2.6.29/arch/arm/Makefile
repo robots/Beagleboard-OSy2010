@@ -250,3 +250,5 @@ define archhelp
   echo  '                  (distribution) /sbin/installkernel or'
   echo  '                  install to $$(INSTALL_PATH) and run lilo'
 endef
+
+drivers-$(CONFIG_XENOMAI) += arch/arm/xenomai/
