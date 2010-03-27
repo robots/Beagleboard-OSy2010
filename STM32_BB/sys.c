@@ -10,6 +10,8 @@
 
 #include "sys.h"
 
+uint32_t DEBUG_ON = 0;
+
 volatile uint16_t SYS_InterruptEnable = 0x0000;
 volatile uint16_t SYS_InterruptFlag = 0x0000;
 const uint16_t SYS_Identifier = 0xCAFE;
@@ -56,6 +58,9 @@ void SYS_IntFlagWriteHandle(void) {
 }
 
 void SYS_ResetHandler(void) {
+	if (DEBUG_ON == 1) 
+		return;
+
 	if (SYS_Reset == SYS_RESET_MAGIC) {
 		SYS_Reset = 0x0000;
 

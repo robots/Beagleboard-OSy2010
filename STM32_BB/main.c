@@ -13,7 +13,6 @@
 
 #include "platform.h"
 
-uint32_t DEBUG_ON = 0;
 
 #ifdef VECT_TAB_RAM
 /* vector-offset (TBLOFF) from bottom of SRAM. defined in linker script */
