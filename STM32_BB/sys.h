@@ -21,8 +21,10 @@
 #define SYS_RESET_MAGIC  0xBABE
 #define SYS_ID_MAGIC     0xCAFE
 
+#ifndef NDEBUG
 // debug
 extern uint32_t DEBUG_ON;
+#endif
 
 extern volatile uint16_t SYS_InterruptEnable;
 extern volatile uint16_t SYS_InterruptFlag;

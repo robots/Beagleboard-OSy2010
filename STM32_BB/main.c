@@ -43,10 +43,14 @@ void GPIO_Configuration(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
+#ifndef NDEBUG
 	// disable JTAG !!!
 	if (DEBUG_ON == 0) {
+#endif
 		GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
+#ifndef NDEBUG
 	}
+#endif
 
 	// set PA[0-4] as analog inputs
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;

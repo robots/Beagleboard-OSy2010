@@ -10,7 +10,9 @@
 
 #include "sys.h"
 
+#ifndef NDEBUG
 uint32_t DEBUG_ON = 0;
+#endif
 
 volatile uint16_t SYS_InterruptEnable = 0x0000;
 volatile uint16_t SYS_InterruptFlag = 0x0000;
@@ -58,8 +60,10 @@ void SYS_IntFlagWriteHandle(void) {
 }
 
 void SYS_ResetHandler(void) {
+#ifndef NDEBUG
 	if (DEBUG_ON == 1) 
 		return;
+#endif
 
 	if (SYS_Reset == SYS_RESET_MAGIC) {
 		SYS_Reset = 0x0000;
