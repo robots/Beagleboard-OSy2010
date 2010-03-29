@@ -243,19 +243,22 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 	CANController_Status &= ~(CAN_STAT_ALST | CAN_STAT_TERR);
 
 	if (CAN1->TSR & CAN_TSR_RQCP2) {
-		CAN1->TSR |= CAN_TSR_RQCP2;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_ALST0)?CAN_STAT_ALST:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TERR0)?CAN_STAT_TERR:0;
+		CANController_Status |= (CAN1->TSR & CAN_TSR_TXOK0)?CAN_STAT_TXOK:0;
+		CAN1->TSR |= CAN_TSR_RQCP2;
 	}
 	if (CAN1->TSR & CAN_TSR_RQCP1) {
-		CAN1->TSR |= CAN_TSR_RQCP1;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_ALST1)?CAN_STAT_ALST:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TERR1)?CAN_STAT_TERR:0;
+		CANController_Status |= (CAN1->TSR & CAN_TSR_TXOK1)?CAN_STAT_TXOK:0;
+		CAN1->TSR |= CAN_TSR_RQCP1;
 	}
 	if (CAN1->TSR & CAN_TSR_RQCP0) {
-		CAN1->TSR |= CAN_TSR_RQCP0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_ALST2)?CAN_STAT_ALST:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TERR2)?CAN_STAT_TERR:0;
+		CANController_Status |= (CAN1->TSR & CAN_TSR_TXOK2)?CAN_STAT_TXOK:0;
+		CAN1->TSR |= CAN_TSR_RQCP0;
 	}
 
 	CANController_Status &= ~CAN_STAT_TXF;
@@ -339,6 +342,11 @@ void CAN1_SCE_IRQHandler(void) {
 
 		// clear interrupt flag
 		CAN1->MSR &= ~CAN_MSR_ERRI;
+
+		// abort msg transmission on Bus-Off
+		if (CAN1->ESR & CAN_ESR_BOFF) {
+			CAN1->TSR |= (CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2);
+		}
 
 		// notify host
 		SYS_SetIntFlag(SYS_INT_CANERRIF);

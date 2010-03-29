@@ -21,6 +21,7 @@
 #define CAN_STAT_ALST  0x0004 /* Arbitration lost for last message */
 #define CAN_STAT_TERR  0x0008 /* Transmit error for last message */
 #define CAN_STAT_INAK  0x0010 /* Initialization ACK */
+#define CAN_STAT_TXOK  0x0020 /* Transmit OK */
 #define CAN_STAT_RX0   0x0F00 /* no of messages queued in RX0 */
 #define CAN_STAT_RX1   0xF000 /* no of messages queued in RX1 */
 
