@@ -18,6 +18,7 @@ volatile uint16_t CANController_Status = 0x0000;
 volatile uint16_t CANController_Control = 0x0000;
 volatile uint16_t CANController_Control_Last = 0x0000;
 volatile uint32_t CANController_Error = 0x0000;
+volatile uint32_t CANController_Error_Last = 0x0000;
 
 volatile struct can_timing_t CANController_Timing;
 
@@ -28,8 +29,11 @@ volatile struct can_message_t *CANController_TX;
 
 struct can_buffer_t CANController_RX0Buffer;
 
+static CAN_FilterInitTypeDef CAN_FilterInitStructure;
+
+static void CANController_HW_Reinit(int first);
+
 void CANController_Init(void) {
-	CAN_FilterInitTypeDef CAN_FilterInitStructure;
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 
@@ -52,9 +56,6 @@ void CANController_Init(void) {
 
 	SYS_ClrIntFlag(SYS_INT_CANMASK);
 
-	// Reset CAN1
-	CAN_DeInit(CAN1);
-
 	// CAN filter init - all messages to FIFO0
 	CAN_FilterInitStructure.CAN_FilterNumber=0;
 	CAN_FilterInitStructure.CAN_FilterMode=CAN_FilterMode_IdMask;
@@ -65,7 +66,6 @@ void CANController_Init(void) {
 	CAN_FilterInitStructure.CAN_FilterMaskIdLow=0x0000;
 	CAN_FilterInitStructure.CAN_FilterFIFOAssignment=0;
 	CAN_FilterInitStructure.CAN_FilterActivation=ENABLE;
-	CAN_FilterInit(&CAN_FilterInitStructure);
 
 
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14;
@@ -81,12 +81,40 @@ void CANController_Init(void) {
 	NVIC_InitStructure.NVIC_IRQChannel = CAN1_SCE_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
-	// enable intertrupts, TODO: less magic values !
-	CAN1->IER = 0x00008F13; // enable all interrupts (except FIFOx full/overrun, sleep/wakeup)
-
 	CANController_Control_Last = 0;
 	CANController_Control = 0;
 	CANController_Status = 0;
+
+	CANController_HW_Reinit(1);
+}
+
+/* Initialization routine with workaround for the error managenment bug in the bxCAN */
+static void CANController_HW_Reinit(int first) {
+	// Reset CAN1 - clears the error state
+	CAN_DeInit(CAN1);
+	CAN_FilterInit(&CAN_FilterInitStructure);
+
+	// enable intertrupts, TODO: less magic values !
+	CAN1->IER = 0x00008F13; // enable all interrupts (except FIFOx full/overrun, sleep/wakeup)
+
+	if (first) 
+		return;
+
+	// enter the init mode
+  CAN1->MCR &= ~CAN_MCR_SLEEP;
+  CAN1->MCR |= CAN_MCR_INRQ;
+
+	// wait for it !
+  while ((CAN1->MSR & CAN_MSR_INAK) != CAN_MSR_INAK);
+
+	// force reinitialization !
+	// tell the ControlHandler that we are in init mode
+	CANController_Control_Last = 1;
+	CANController_Error_Last = 0;
+
+	// apply the same setting
+	CANController_ControlHandle();
+
 }
 
 /* This should be periodicaly called, using timer */
@@ -98,7 +126,7 @@ void CANController_Worker() {
 
 /* message has been read from RX0, shift the buffer */
 void CANController_Rx0Handle(void) {
-	uint16_t rx0_count;
+	//uint16_t rx0_count;
 
 	CANController_RX0->flags |= CAN_MSG_INV;
 	CANBuf_ReadDone(&CANController_RX0Buffer);
@@ -213,7 +241,7 @@ void CANController_ControlHandle(void) {
 		if (CANController_Control & CAN_CTRL_INIT) {
 			CAN1->MCR |= CAN_MCR_INRQ;
 		} else {
-			CAN1->MCR |= CAN_MCR_TXFP | CAN_MCR_RFLM | CAN_MCR_AWUM;// | CAN_MCR_ABOM;
+			CAN1->MCR |= CAN_MCR_TXFP | CAN_MCR_RFLM | CAN_MCR_AWUM | CAN_MCR_ABOM;
 			CAN1->MCR &= ~(CAN_MCR_SLEEP | 0x10000); // we don't support sleep, no debug-freeze
 			CAN1->MCR &= ~CAN_MCR_INRQ; // leave init mode
 			CANController_Status &= ~CAN_STAT_INAK;
@@ -240,9 +268,9 @@ void CANController_TimingHandle(void) {
 
 /* TX interrupt */
 void USB_HP_CAN1_TX_IRQHandler(void) {
-	CANController_Status &= ~(CAN_STAT_ALST | CAN_STAT_TERR);
+	CANController_Status &= ~(CAN_STAT_ALST | CAN_STAT_TERR | CAN_STAT_TXOK);
 
-	if (CAN1->TSR & CAN_TSR_RQCP2) {
+	if (CAN1->TSR & CAN_TSR_RQCP0) {
 		CANController_Status |= (CAN1->TSR & CAN_TSR_ALST0)?CAN_STAT_ALST:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TERR0)?CAN_STAT_TERR:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TXOK0)?CAN_STAT_TXOK:0;
@@ -254,7 +282,7 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TXOK1)?CAN_STAT_TXOK:0;
 		CAN1->TSR |= CAN_TSR_RQCP1;
 	}
-	if (CAN1->TSR & CAN_TSR_RQCP0) {
+	if (CAN1->TSR & CAN_TSR_RQCP2) {
 		CANController_Status |= (CAN1->TSR & CAN_TSR_ALST2)?CAN_STAT_ALST:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TERR2)?CAN_STAT_TERR:0;
 		CANController_Status |= (CAN1->TSR & CAN_TSR_TXOK2)?CAN_STAT_TXOK:0;
@@ -331,25 +359,40 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
  * This ISR is called periodicaly while error condition persists !
  */
 void CAN1_SCE_IRQHandler(void) {
+	static uint16_t count = 0;
 
-	if (CAN1->ESR & (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF)) {
-		// if error happened, copy the state
-		CANController_Error = CAN1->ESR;
+	// if error happened, copy the state
+	CANController_Error = CAN1->ESR;
 
-		// clean flag
-		CAN1->ESR &= ~ (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF);
-		CAN1->ESR |= CAN_ESR_LEC;
+	// abort msg transmission on Bus-Off
+	if (CAN1->ESR & CAN_ESR_BOFF) {
+		CAN1->TSR |= (CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2);
+	}
+	// clean flag - not working at all :(
+	CAN1->ESR &= ~ (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF);
 
-		// clear interrupt flag
-		CAN1->MSR &= ~CAN_MSR_ERRI;
+	// clear last error code
+	CAN1->ESR |= CAN_ESR_LEC;
 
-		// abort msg transmission on Bus-Off
-		if (CAN1->ESR & CAN_ESR_BOFF) {
-			CAN1->TSR |= (CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2);
-		}
+	// clear interrupt flag
+	CAN1->MSR &= ~CAN_MSR_ERRI;
 
+	// work around the bug in HW
+	// notify only on "new" error, otherwise reset can controller
+	if (CANController_Error ^ CANController_Error_Last) {
+		count = 0;
 		// notify host
 		SYS_SetIntFlag(SYS_INT_CANERRIF);
+	} else {
+		count ++;
+		if (count > 5) {
+			count = 0;
+			CANController_HW_Reinit(0);
+			SYS_SetIntFlag(SYS_INT_CANRSTIF);
+		}
 	}
+
+	CANController_Error_Last = CANController_Error;
+
 }
 
