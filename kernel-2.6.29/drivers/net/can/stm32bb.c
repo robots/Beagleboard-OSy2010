@@ -407,6 +407,8 @@ static int stm32bb_can_setup(struct net_device *net, struct stm32bb_priv *priv,
 
 static void stm32bb_hw_reset(struct spi_device *spi)
 {
+	unsigned long timeout;
+
 	/* write reset magic to reset the device */
 	stm32bb_write_reg(spi, SYS_RESET, SYS_RESET_MAGIC, 2);
 
@@ -414,7 +416,13 @@ static void stm32bb_hw_reset(struct spi_device *spi)
 	 * The value here depends on the version of FW
 	 * DEBUG version includes extra startup delay
 	 */
-	mdelay(1000);
+	timeout = jiffies + HZ;
+	while (1) {
+		schedule();
+		if (time_after(jiffies, timeout)) {
+			return;
+		}
+	}
 }
 
 static void stm32bb_can_reset(struct spi_device *spi)
@@ -425,9 +433,7 @@ static void stm32bb_can_reset(struct spi_device *spi)
 
 	// FIXME - this doesn't work very well
 	//stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_RST, 2);
-
-	/* Wait for reset to finish */
-	mdelay(50);
+	//mdelay(50);
 
 	/* lets enter init state */
 	stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_INIT, 2);
@@ -677,34 +683,23 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 			/* make snapshot of can status reg */
 			can_status = stm32bb_read_reg(spi, CAN_STATUS, 2);
-
-			/* Data in FIFO0 */
-			if (intf & SYS_INT_CANRX0IF) {
-				dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs\n", (can_status >> 8) & 0x0f);
-				// be sure to eat up all messages
-				for (i = 0; i < ((can_status >> 8) & 0x0f); i++)
-					stm32bb_hw_rx(spi, 0);
-			}
-
-			/* Data in FIFO1 */
-/*			if (intf & SYS_INT_CANRX1IF) {
-				dev_info(&spi->dev, "ISR: RX1 interrupt %d msgs\n", (can_status >> 12) & 0x0f);
-				for (i = 0; i < ((can_status >> 12) & 0x0f); i++)
-					stm32bb_hw_rx(spi, 1);
-			}
-*/
+dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
 			if (intf & SYS_INT_CANERRIF) {
 				eflag = stm32bb_read_reg(spi, CAN_ERR, 4);
+				dev_err(&spi->dev, "ISR: Error: 0x%04x\n", eflag);
 				dev_err(&spi->dev, "ISR: Error: TEC: 0x%02x REC: 0x%02x LEC: 0x%02x flags: %s %s %s\n",
 					((eflag & CAN_ERR_TEC) >> 16), ((eflag & CAN_ERR_REC) >> 24),
 					((eflag & CAN_ERR_LEC) >> 4), (eflag & CAN_ERR_BOFF)?"BOFF":"",
 					(eflag & CAN_ERR_EPVF)?"EOVF":"", (eflag & CAN_ERR_EWGF)?"EWGF":"");
+
+				net->stats.tx_errors++;
+
 				if (eflag & CAN_ERR_EWGF) {
 					priv->can.can_stats.error_warning++;
 					new_state = CAN_STATE_ERROR_WARNING;
 					can_id_err = CAN_ERR_CRTL;
 					}
-					if (eflag & CAN_ERR_EPVF) {
+				if (eflag & CAN_ERR_EPVF) {
 						priv->can.can_stats.error_passive++;
 						new_state = CAN_STATE_ERROR_PASSIVE;
 					can_id_err = CAN_ERR_CRTL;
@@ -738,7 +733,6 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 					if (priv->can.restart_ms == 0) {
 						can_bus_off(net);
 						stm32bb_can_sleep(spi);
-						return;
 					}
 				}
 			} // CAN_ERRIF
@@ -760,10 +754,17 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 				}
 			}
 
+			/* Data in FIFO0 */
+			if (intf & SYS_INT_CANRX0IF) {
+				dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs\n", (can_status >> 8) & 0x0f);
+				// be sure to eat up all messages
+				for (i = 0; i < ((can_status >> 8) & 0x0f); i++)
+					stm32bb_hw_rx(spi, 0);
+			}
 
-			/* Message transmitted  */
+			/* Message TX interrupt  */
 			if (intf & SYS_INT_CANTXIF) {
-				dev_info(&spi->dev, "ISR: TX interrupt\n");
+				dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
 				if (can_status & CAN_STAT_ALST) {
 					priv->can.can_stats.arbitration_lost++;
 					dev_warn(&spi->dev, "Arbitration lost !\n");
@@ -771,19 +772,34 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 				if (can_status & CAN_STAT_TERR) {
 					dev_warn(&spi->dev, "Transmit error  !\n");
 				}
-
-				net->stats.tx_packets++;
-				net->stats.tx_bytes += priv->tx_len - 1;
-				if (priv->tx_len) {
-					can_get_echo_skb(net, 0);
-					priv->tx_len = 0;
+				if (can_status & CAN_STAT_TXOK) {
+					net->stats.tx_packets++;
+					net->stats.tx_bytes += priv->tx_len - 1;
+					if (priv->tx_len) {
+						can_get_echo_skb(net, 0);
+						priv->tx_len = 0;
+					}
+					if (priv->can.state != CAN_STATE_BUS_OFF) {
+						netif_wake_queue(net);
+					}
 				}
-				if (priv->can.state != CAN_STATE_BUS_OFF) {
+			}
+
+			/* CAN was reset */
+			if (intf & SYS_INT_CANRSTIF) {
+				dev_info(&spi->dev, "ISR: CAN was reset due to error\n");
+
+				priv->can.state = CAN_STATE_ERROR_ACTIVE;
+
+				if (priv->tx_skb || priv->tx_len) {
+					dev_info(&spi->dev, "ISR: TX was in progress, doing clean-up\n");
+					stm32bb_clean(net);
 					netif_wake_queue(net);
 				}
 			}
-		} // end of can
 
+		} // end of can
+/*
 		if (intf & SYS_INT_PWRMASK) {
 			uint16_t pwr_status;
 			pwr_status = stm32bb_read_reg(spi, PWR_STATUS, 2);
@@ -802,7 +818,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 					printk("Adapter unpluged !!\n");
 				}
 			}
-		} // end of power
+		} // end of power*/
 	} // while
 }
 
