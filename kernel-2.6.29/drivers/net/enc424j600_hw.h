@@ -208,7 +208,7 @@
 #define INT		(1 << 7)
 #define FCIDLE		(1 << 6)
 #define RXBUSY		(1 << 5)
-#define CLOCKRDY	(1 << 4)
+#define CLKRDY		(1 << 4)
 #define PHYDPX		(1 << 2)
 #define PHYLNK		(1 << 0)
 
@@ -391,6 +391,10 @@
 #define ANABLE		(1 << 3)
 #define LLSTAT		(1 << 2)
 #define EXTREGS		(1 << 0)
+
+#define EUDAST_TEST_VAL	0x1234
+
+#define TSV_SIZE	7
 
 /* SRAM size */
 #define ENC424J600_SRAM_END	0x5FFF

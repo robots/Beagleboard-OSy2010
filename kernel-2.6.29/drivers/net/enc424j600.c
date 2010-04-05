@@ -33,19 +33,16 @@
 #define DRV_NAME	"enc424j600"
 #define DRV_VERSION	"1.00"
 
-#define SPI_OPLEN	1
-
-#define ENC434J600_MSG_DEFAULT	\
+#define ENC424J600_MSG_DEFAULT	\
 	(NETIF_MSG_PROBE | NETIF_MSG_IFUP | NETIF_MSG_IFDOWN | NETIF_MSG_LINK)
 
-/* Buffer size required for the largest SPI transfer (i.e., reading a
- * frame). */
 #define SPI_TRANSFER_BUF_LEN	(4 + MAX_FRAMELEN)
-
 #define TX_TIMEOUT	(4 * HZ)
 
 /* Max TX retries in case of collision as suggested by errata datasheet */
 #define MAX_TX_RETRYCOUNT	16
+
+static int enc424j600_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
 
 enum {
 	RXFILTER_NORMAL,
@@ -73,7 +70,11 @@ struct enc424j600_net {
 	bool speed100;
 	int rxfilter;
 	u32 msg_enable;
-	u8 spi_transfer_buf[SPI_TRANSFER_BUF_LEN];
+
+	u8 *spi_rx_buf;
+	u8 *spi_tx_buf;
+	dma_addr_t spi_tx_dma;
+	dma_addr_t spi_rx_dma;
 };
 
 /* use ethtool to change the level for any given device */
@@ -88,8 +89,9 @@ static struct {
 static int
 spi_read_buf(struct enc424j600_net *priv, int len, u8 *data)
 {
-	u8 *rx_buf = priv->spi_transfer_buf + 4;
-	u8 *tx_buf = priv->spi_transfer_buf;
+#if 0
+	u8 *rx_buf = priv->spi_tx_buf + 4;
+	u8 *tx_buf = priv->spi_tx_buf;
 	struct spi_transfer t = {
 		.tx_buf = tx_buf,
 		.rx_buf = rx_buf,
@@ -113,6 +115,8 @@ spi_read_buf(struct enc424j600_net *priv, int len, u8 *data)
 			__func__, ret);
 
 	return ret;
+#endif
+	return 0;
 }
 
 /*
@@ -121,127 +125,50 @@ spi_read_buf(struct enc424j600_net *priv, int len, u8 *data)
 static int spi_write_buf(struct enc424j600_net *priv, int len,
 			 const u8 *data)
 {
+#if 0
 	int ret;
 
 	if (len > SPI_TRANSFER_BUF_LEN - 1 || len <= 0)
 		ret = -EINVAL;
 	else {
-		priv->spi_transfer_buf[0] = ENC28J60_WRITE_BUF_MEM;
-		memcpy(&priv->spi_transfer_buf[1], data, len);
-		ret = spi_write(priv->spi, priv->spi_transfer_buf, len + 1);
+		priv->spi_tx_buf[0] = ENC28J60_WRITE_BUF_MEM;
+		memcpy(&priv->spi_tx_buf[1], data, len);
+		ret = spi_write(priv->spi, priv->spi_tx_buf, len + 1);
 		if (ret && netif_msg_drv(priv))
 			printk(KERN_DEBUG DRV_NAME ": %s() failed: ret = %d\n",
 				__func__, ret);
 	}
 	return ret;
+#endif
+	return 0;
 }
 
-/*
- * basic SPI read operation
- */
-static u8 spi_read_op(struct enc424j600_net *priv, u8 op,
-			   u8 addr)
+static int enc424j600_spi_trans(struct enc424j600_net *priv, int len)
 {
-	u8 tx_buf[2];
-	u8 rx_buf[4];
-	u8 val = 0;
+	struct spi_transfer t = {
+		.tx_buf = priv->spi_tx_buf,
+		.rx_buf = priv->spi_rx_buf,
+		.len = len,
+		.cs_change = 0,
+	};
+	struct spi_message m;
 	int ret;
-	int slen = SPI_OPLEN;
 
-	/* do dummy read if needed */
-	if (addr & SPRD_MASK)
-		slen++;
+	spi_message_init(&m);
 
-	tx_buf[0] = op | (addr & ADDR_MASK);
-	ret = spi_write_then_read(priv->spi, tx_buf, 1, rx_buf, slen);
+	if (enc424j600_enable_dma) {
+		t.tx_dma = priv->spi_tx_dma;
+		t.rx_dma = priv->spi_rx_dma;
+		m.is_dma_mapped = 1;
+	}
+
+	spi_message_add_tail(&t, &m);
+
+	ret = spi_sync(priv->spi, &m);
 	if (ret)
-		printk(KERN_DEBUG DRV_NAME ": %s() failed: ret = %d\n",
-			__func__, ret);
-	else
-		val = rx_buf[slen - 1];
-
-	return val;
-}
-
-/*
- * basic SPI write operation
- */
-static int spi_write_op(struct enc424j600_net *priv, u8 op,
-			u8 addr, u8 val)
-{
-	int ret;
-
-	priv->spi_transfer_buf[0] = op | (addr & ADDR_MASK);
-	priv->spi_transfer_buf[1] = val;
-	ret = spi_write(priv->spi, priv->spi_transfer_buf, 2);
-	if (ret && netif_msg_drv(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() failed: ret = %d\n",
-			__func__, ret);
+		dev_err(&priv->spi->dev, "spi transfer failed: ret = %d\n", ret);
 	return ret;
-}
-
-/*
- * Blocking write, writes a instruction @instr and then @n bytes from spi_transfer_buf.
- */
-static int enc424j600_write_instr(struct enc424j600_net *priv, u8 instr, u8 n)
-{
-	struct spi_message m;
-
-	struct spi_transfer instr_transfer = {
-		.tx_buf = &instr,
- 		.len = 1,
-	};
-
-	struct spi_transfer data_transfer = {
-		.tx_buf = priv->spi_transfer_buf,
- 		.len = n,
-	};
-
-	spi_message_init(&m);
-	spi_message_add_tail(&instr_transfer, &m);
-
-	if(n)
-		spi_message_add_tail(&data_transfer);
-
-	int ret = spi_sync(priv->spi, &m); 
-
-	if (ret && netif_msg_drv(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() failed: ret = %d\n",
-			__func__, ret);
-	
-	return ret;
-}
-
-/*
- * Blockig write/read, writes a instruction @instr and then reads @n to spi_transfer_buf
- */
-static int enc424j600_read_instr(struct enc424j600_net *priv, u8 instr, u8 n)
-{
-	struct spi_message m;
-
-	struct spi_transfer instr_transfer = {
-		.tx_buf = &instr,
- 		.len = 1,
-	};
-
-	struct spi_transfer data_transfer = {
-		.rx_buf = priv->spi_transfer_buf,
- 		.len = n,
-	};
-
-	spi_message_init(&m);
-	spi_message_add_tail(&instr_transfer, &m);
-
-	if (n)
-		spi_message_add_tail(&data_transfer);
-
-	int ret = spi_sync(priv->spi, &m); 
-
-	if (ret && netif_msg_drv(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() failed: ret = %d\n",
-			__func__, ret);
-	
-	return ret;
+	return 0;
 }
 
 /*
@@ -252,12 +179,13 @@ static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
 	u8 b = (addr & BANK_MASK) >> BANK_SHIFT;
 
 	/* These registers are present in all banks, no need to switch bank */
-	if (addr >= EDUASTL && addr <= ECON1H)
+	if (addr >= EUDASTL && addr <= ECON1H)
 		return;
 	if(priv->bank == b)
 		return;
 
-	enc424j600_write_instr(priv, BXSEL(b), 0);
+	priv->spi_tx_buf[0] = BXSEL(b);
+	enc424j600_spi_trans(priv, 1);
 
 	priv->bank = b;
 }
@@ -268,8 +196,9 @@ static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
 static void enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 {
 	enc424j600_set_bank(priv, addr);
-	priv->spi_transfer_buf[0] = mask;
-	enc424j600_write_instr(priv, BFS(addr), 1);
+	priv->spi_tx_buf[0] = BFS(addr);
+	priv->spi_tx_buf[1] = mask;
+	enc424j600_spi_trans(priv, 2);
 }
 
 /*
@@ -278,8 +207,9 @@ static void enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 static void enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 {
 	enc424j600_set_bank(priv, addr);
-	priv->spi_transfer_buf[0] = mask;
-	enc424j600_write_instr(priv, BFC(addr), 1);
+	priv->spi_tx_buf[0] = BFC(addr);
+	priv->spi_tx_buf[1] = mask;
+	enc424j600_spi_trans(priv, 2);
 }
 
 /*
@@ -293,8 +223,9 @@ static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
 
 	enc424j600_set_bank(priv, sfr);
 
-	priv->spi_transfer_buf[0] = data & 0xFF;
-	ret = enc424j600_write_instr(priv, WCR(sfr & ADDR_MASK), 1);
+	priv->spi_tx_buf[0] = WCR(sfr & ADDR_MASK);
+	priv->spi_tx_buf[1] = data & 0xFF;
+	ret = enc424j600_spi_trans(priv, 2);
 
 	return ret;
 }
@@ -308,8 +239,9 @@ static int enc424j600_read_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 *data)
 	int ret;
 
 	enc424j600_set_bank(priv, sfr);
-	ret = enc424j600_read_instr(priv, RCR(sfr & ADDR_MASK), 1);
-	*data = priv->spi_transfer_buf[0];
+	priv->spi_tx_buf[0] = RCR(sfr & ADDR_MASK);
+	ret = enc424j600_spi_trans(priv, 2);
+	*data = priv->spi_rx_buf[1];
 
 	return ret;
 }
@@ -326,12 +258,14 @@ static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 dat
 
 	enc424j600_set_bank(priv, sfr);
 
-	priv->spi_transfer_buf[0] = data & 0xFF;
-	priv->spi_transfer_buf[1] data >> 8;
-	ret = enc424j600_write_instr(priv, WCR(sfr & ADDR_MASK), 2);
+	priv->spi_tx_buf[0] = WCR(sfr & ADDR_MASK);
+	priv->spi_tx_buf[1] = data & 0xFF;
+	priv->spi_tx_buf[2] = data >> 8;
+	ret = enc424j600_spi_trans(priv, 3);
 
 	return ret;
 }
+
 /*
  * Read a 16bit special function register.
  * The @sfr parameters takes address of the low byte of the register.
@@ -343,9 +277,11 @@ static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *dat
 	int ret;
 
 	enc424j600_set_bank(priv, sfr);
-	ret = enc424j600_read_instr(priv, RCR(sfr & ADDR_MASK), 2);
-	*data = priv->spi_transfer_buf[0] |
-		priv->spi_transfer_buf[1] << (u16)8;
+
+	priv->spi_tx_buf[0] = RCR(sfr & ADDR_MASK);
+	ret = enc424j600_spi_trans(priv, 3);
+	*data = priv->spi_rx_buf[1] |
+		priv->spi_rx_buf[2] << (u16)8;
 
 	return ret;
 }
@@ -358,28 +294,28 @@ static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *dat
  */
 static void enc424j600_soft_reset(struct enc424j600_net *priv)
 {
+	u8 estath;
+	u16 eudast;
+
 	if (netif_msg_hw(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
 	do{
-		u16 test;
+		enc424j600_write_16b_sfr(priv, EUDASTL, EUDAST_TEST_VAL);
+		enc424j600_read_16b_sfr(priv, EUDASTL, &eudast);
+	} while (eudast != EUDAST_TEST_VAL);
 
-		enc424j600_write_16b_sfr(priv, EDUASTL, 0x1234);
-		enc424j600_read_16b_sfr(priv, EDUASTL, &test);
-	} while (test != 0x1234);
-
-	u8 estath;
 	do{
-		enc424j600_read_8b_sfr(priv, ESTATH, estath);
+		enc424j600_read_8b_sfr(priv, ESTATH, &estath);
 	} while (!estath & CLKRDY);
 
-	enc424j600_write_instr(priv, SETETHRST, 0);
+	priv->spi_tx_buf[0] = SETETHRST;
+	enc424j600_spi_trans(priv, 1);
 
 	udelay(50);
 
-	u16 ret;
-	enc424j600_read_16b_sfr(priv, EUDASTL, &ret);
-	if (netif_msg_hw(priv) && ret != 0)
+	enc424j600_read_16b_sfr(priv, EUDASTL, &eudast);
+	if (netif_msg_hw(priv) && eudast != 0)
 		printk(KERN_DEBUG DRV_NAME ": %s() EUDASTL is not zero!\n", __func__);
 
 	udelay(500);
@@ -392,6 +328,7 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 static void enc424j600_mem_read(struct enc424j600_net *priv,
 				     u16 addr, int len, u8 *data)
 {
+#if 0
 	mutex_lock(&priv->lock);
 	nolock_regw_write(priv, ERDPTL, addr);
 #ifdef CONFIG_ENC28J60_WRITEVERIFY
@@ -405,6 +342,7 @@ static void enc424j600_mem_read(struct enc424j600_net *priv,
 #endif
 	spi_read_buf(priv, len, data);
 	mutex_unlock(&priv->lock);
+#endif
 }
 
 /*
@@ -413,6 +351,7 @@ static void enc424j600_mem_read(struct enc424j600_net *priv,
 static void
 enc424j600_packet_write(struct enc424j600_net *priv, int len, const u8 *data)
 {
+#if 0
 	mutex_lock(&priv->lock);
 	/* Set the write pointer to start of transmit buffer area */
 	nolock_regw_write(priv, EWRPTL, TXSTART_INIT);
@@ -441,6 +380,7 @@ enc424j600_packet_write(struct enc424j600_net *priv, int len, const u8 *data)
 			 ": %s() after write packet ERWPT:0x%04x, len=%d\n",
 			 __func__, nolock_regw_read(priv, EWRPTL), len);
 	mutex_unlock(&priv->lock);
+#endif
 }
 
 static unsigned long msec20_to_jiffies;
@@ -454,7 +394,8 @@ static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask
 	u8 value;
 
 	/* 20 msec timeout read */
-	while (enc424j600_read_8b_sfr(priv, reg, value) && (value & mask) != readyMask) {
+	enc424j600_read_8b_sfr(priv, reg, &value);
+	while ((value & mask) != readyMask) {
 		if (time_after(jiffies, timeout)) {
 			if (netif_msg_drv(priv))
 				dev_dbg(&priv->spi->dev,
@@ -462,6 +403,7 @@ static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask
 			return -ETIMEDOUT;
 		}
 		cpu_relax();
+		enc424j600_read_8b_sfr(priv, reg, &value);
 	}
 
 	return 0;
@@ -475,23 +417,29 @@ static int enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *da
 {
 	int ret;
 	
-	enc424j600_write_16b_sfr(priv, MIREGADR, address | (MIREGADRH_VAL << 8));
+	enc424j600_write_16b_sfr(priv, MIREGADRL, address | (MIREGADRH_VAL << 8));
 	enc424j600_write_16b_sfr(priv, MICMDL, MIIRD);
 	udelay(26);
 	ret = !poll_ready(priv, MISTATL, BUSY, 0);
 	enc424j600_write_16b_sfr(priv, MICMDL, 0);
-	enc424j600_read_16b_sfr(priv, MIRD, data);
+	enc424j600_read_16b_sfr(priv, MIRDL, data);
 	return ret;
 }
 
 static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 {
-	int ret;
-
-	enc424j600_write_16b_sfr(priv, MIREGADR, address | (MIREGADRH_VAL << 8));
-	enc424j600_write_16b_sfr(priv, MIWR, data);
+	enc424j600_write_16b_sfr(priv, MIREGADRL, address | (MIREGADRH_VAL << 8));
+	enc424j600_write_16b_sfr(priv, MIWRL, data);
 	udelay(26);
 	return !poll_ready(priv, MISTATL, BUSY, 0);
+}
+
+/*
+ * Read the hardware MAC address to dev->dev_addr.
+ */
+static int enc424j600_get_hw_macaddr(struct net_device *ndev)
+{
+	return 1;
 }
 
 /*
@@ -499,6 +447,7 @@ static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 da
  */
 static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 {
+#if 0
 	int ret;
 	struct enc424j600_net *priv = netdev_priv(ndev);
 
@@ -508,7 +457,7 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 			printk(KERN_INFO DRV_NAME
 				": %s: Setting MAC address to %pM\n",
 				ndev->name, ndev->dev_addr);
-		/* NOTE: MAC address in ENC28J60 is byte-backward */
+		/ * NOTE: MAC address in ENC28J60 is byte-backward * /
 		nolock_regb_write(priv, MAADR5, ndev->dev_addr[0]);
 		nolock_regb_write(priv, MAADR4, ndev->dev_addr[1]);
 		nolock_regb_write(priv, MAADR3, ndev->dev_addr[2]);
@@ -525,6 +474,8 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 	}
 	mutex_unlock(&priv->lock);
 	return ret;
+#endif
+	return 1;
 }
 
 /*
@@ -548,6 +499,7 @@ static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
  */
 static void enc424j600_dump_regs(struct enc424j600_net *priv, const char *msg)
 {
+#if 0
 	mutex_lock(&priv->lock);
 	printk(KERN_DEBUG DRV_NAME " %s\n"
 		"HwRevID: 0x%02x\n"
@@ -576,21 +528,7 @@ static void enc424j600_dump_regs(struct enc424j600_net *priv, const char *msg)
 		nolock_regb_read(priv, MACLCON2),
 		nolock_regb_read(priv, MAPHSUP));
 	mutex_unlock(&priv->lock);
-}
-
-/*
- * ERXRDPT need to be set always at odd addresses, refer to errata datasheet
- */
-static u16 erxrdpt_workaround(u16 next_packet_ptr, u16 start, u16 end)
-{
-	u16 erxrdpt;
-
-	if ((next_packet_ptr - 1 < start) || (next_packet_ptr - 1 > end))
-		erxrdpt = end;
-	else
-		erxrdpt = next_packet_ptr - 1;
-
-	return erxrdpt;
+#endif
 }
 
 /*
@@ -598,14 +536,18 @@ static u16 erxrdpt_workaround(u16 next_packet_ptr, u16 start, u16 end)
  */
 static u16 rx_packet_start(u16 ptr)
 {
+#if 0
 	if (ptr + RSV_SIZE > RXEND_INIT)
 		return (ptr + RSV_SIZE) - (RXEND_INIT - RXSTART_INIT + 1);
 	else
 		return ptr + RSV_SIZE;
+#endif
+	return 0;
 }
 
-static void nolock_rxfifo_init(struct enc424j600_net *priv, u16 start, u16 end)
+static void nolock_rxfifo_init(struct enc424j600_net *priv, u16 size)
 {
+#if 0
 	u16 erxrdpt;
 
 	if (start > 0x1FFF || end > 0x1FFF || start > end) {
@@ -620,10 +562,12 @@ static void nolock_rxfifo_init(struct enc424j600_net *priv, u16 start, u16 end)
 	erxrdpt = erxrdpt_workaround(priv->next_pk_ptr, start, end);
 	nolock_regw_write(priv, ERXRDPTL, erxrdpt);
 	nolock_regw_write(priv, ERXNDL, end);
+#endif
 }
 
-static void nolock_txfifo_init(struct enc424j600_net *priv, u16 start, u16 end)
+static void nolock_txfifo_init(struct enc424j600_net *priv)
 {
+#if 0
 	if (start > 0x1FFF || end > 0x1FFF || start > end) {
 		if (netif_msg_drv(priv))
 			printk(KERN_ERR DRV_NAME ": %s(%d, %d) TXFIFO "
@@ -633,6 +577,7 @@ static void nolock_txfifo_init(struct enc424j600_net *priv, u16 start, u16 end)
 	/* set transmit buffer start + end */
 	nolock_regw_write(priv, ETXSTL, start);
 	nolock_regw_write(priv, ETXNDL, end);
+#endif
 }
 
 /*
@@ -646,6 +591,7 @@ static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
 		dev_dbg(&priv->spi->dev, "%s power...\n",
 				is_low ? "low" : "high");
 
+#if 0
 	mutex_lock(&priv->lock);
 	if (is_low) {
 		nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
@@ -659,6 +605,7 @@ static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
 		/* caller sets ECON1_RXEN */
 	}
 	mutex_unlock(&priv->lock);
+#endif
 }
 
 
@@ -668,7 +615,9 @@ static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
  */
 static int enc424j600_hw_init(struct enc424j600_net *priv)
 {
-	u8 reg;
+	u8 eidledl;
+	u16 phcon1;
+	u16 macon2;
 
 	if (netif_msg_drv(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() - %s\n", __func__,
@@ -687,19 +636,18 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/*
 	 * Check the device id and silicon revision id.
 	 */
-	u8 eidledl;
 	enc424j600_read_8b_sfr(priv, EIDLEDL, &eidledl);
 
-	if((eidled & DEVID_MASK) >> DEVID_SHIFT != ENC424J600_DEV_ID)
+	if((eidledl & DEVID_MASK) >> DEVID_SHIFT != ENC424J600_DEV_ID){
 		if (netif_msg_drv(priv))
 			printk(KERN_DEBUG DRV_NAME ": %s() Invalid device ID: %d\n",
-				__func__, (eidled & DEVID_MASK) >> DEVID_SHIFT);
+				__func__, (eidledl & DEVID_MASK) >> DEVID_SHIFT);
 		return 0;
 	}
 
 	if (netif_msg_drv(priv))
 		printk(KERN_INFO DRV_NAME ": Silicon revision ID: 0x%02x\n",
-			(eidled & REVID_MASK) >> REVID_SHIFT);
+			(eidledl & REVID_MASK) >> REVID_SHIFT);
 	
 
 	/* program ERXST (rx buffer size) */
@@ -709,18 +657,15 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* default filter mode: (unicast OR broadcast) AND crc valid */
 	enc424j600_write_16b_sfr(priv, ERXFCONL, UCEN | BCEN | CRCEN);
 		
-
-	/* TODO: Flow control */
-
 	/* PHANA */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
 	
 	/* PHCON1 */
-	u16 phcon1 = 0;
+	phcon1 = 0;
 	if (priv->autoneg){
 		/* Enable autonegotiation and renegotiate */
 		phcon1 |= ANEN | RENEG;
-	}else{
+	} else {
 		if(priv->speed100)
 			phcon1 |= SPD100;
 		if(priv->full_duplex)
@@ -732,24 +677,27 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	 * defer transmission if collision occurs (only for half duplex)
 	 * pad to 60 or 64 bytes and append CRC
 	 * enable receiving huge frames (instead of limiting packet size) */
-	u16 macon2 = MACON2_DEFER | PADCFG2 | PADCFG0 | TXCRCEN | HFRMEN;
+	macon2 = MACON2_DEFER | PADCFG2 | PADCFG0 | TXCRCEN | HFRMEN;
 
 	/* If autonegotiation is enabled, we have to wait untill it finishes
 	 * and set the PHYDPX bit in MACON2 correctly */
 	if (priv->autoneg) {
 		u16 phstat1;
-		do {
-			enc424j600_phy_read(priv, PHSTAT, &phstat)
-		} while(!(phstat & ANDONE));
-
 		u8 estath;
+
+		do {
+			enc424j600_phy_read(priv, PHSTAT1, &phstat1);
+		} while(!(phstat1 & ANDONE));
+
+		/* read the PHYDPX bit in ESTAT and set FULDPX in MACON2 accordingly */
 		enc424j600_read_8b_sfr(priv, ESTATH, &estath);
 		if (estath & PHYDPX) {
 			macon2 |= FULDPX;
-		/* read the PHYDPX bit in ESTAT and set FULDPX in MACON2 accordingly */
-	} else if (priv->full_duplex)
+		}
+	} else if (priv->full_duplex) {
 		macon2 |= FULDPX;
-	enc424j600_write_16b_sfr(priv, MACON2, macon2);
+	}
+	enc424j600_write_16b_sfr(priv, MACON2L, macon2);
 
 	/* MAIPGL
 	 * Recomended values for inter packet gaps */
@@ -760,18 +708,18 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 
 	/* LED settings */
 	enc424j600_write_8b_sfr(priv, EIDLEDH,
-		LED_A_SETTINGS << 8 | LED_B_SETTINGS);
+		(LED_A_SETTINGS << 4 | LED_B_SETTINGS));
 	
 	/* 
 	 * Select enabled interrupts, but don't set the global
 	 * interrupt enable flag.
 	 */
-	enc424j600_write_16b_sfr(priv, EIE,
+	enc424j600_write_16b_sfr(priv, EIEL,
 		LINKIE << 8 | PKTIE | DMAIE | TXIE |
 		TXABTIE | RXABTIE);
 
-	nolock_rxfifo_init(priv, RXSTART_INIT, RXEND_INIT);
-	nolock_txfifo_init(priv, TXSTART_INIT, TXEND_INIT);
+	nolock_rxfifo_init(priv, RX_BUFFER_SIZE);
+	nolock_txfifo_init(priv);
 
 	mutex_unlock(&priv->lock);
 
@@ -812,34 +760,11 @@ static void enc424j600_hw_disable(struct enc424j600_net *priv)
 	/* disable receive logic */
 	enc424j600_clear_bits(priv, ECON1L, RXEN);
 
-	/* Enable global interrupt flag */
+	/* Disable global interrupt flag */
 	enc424j600_clear_bits(priv, EIEH, INTIE);
 
 	priv->hw_enable = false;
 
-	mutex_unlock(&priv->lock);
-}
-
-static void enc424j600_hw_disable(struct enc424j600_net *priv)
-{
-	if (netif_msg_hw(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() disabling interrupts.\n",
-			__func__);
-
-	mutex_lock(&priv->lock);
-	/* disable interrutps and packet reception */
-	nolock_regb_write(priv, EIE, 0x00);
-	nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
-	priv->hw_enable = false;
-	mutex_unlock(&priv->lock);
-}
-
-static int
-enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
-	/* disable interrutps and packet reception */
-	nolock_regb_write(priv, EIE, 0x00);
-	nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
-	priv->hw_enable = false;
 	mutex_unlock(&priv->lock);
 }
 
@@ -853,7 +778,7 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 		/* link is in low power mode now; duplex setting
 		 * will take effect on next enc424j600_hw_init().
 		 */
-		if (speed == SPEED_10 || speed = SPEED_100)
+		if (speed == SPEED_10 || speed == SPEED_100) {
 			priv->autoneg = (autoneg == AUTONEG_ENABLE);
 			priv->full_duplex = (duplex == DUPLEX_FULL);
 			priv->speed100 = (speed == SPEED_100);
@@ -877,6 +802,7 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
  */
 static void enc424j600_read_tsv(struct enc424j600_net *priv, u8 tsv[TSV_SIZE])
 {
+#if 0
 	int endptr;
 
 	endptr = locked_regw_read(priv, ETXNDL);
@@ -884,11 +810,13 @@ static void enc424j600_read_tsv(struct enc424j600_net *priv, u8 tsv[TSV_SIZE])
 		printk(KERN_DEBUG DRV_NAME ": reading TSV at addr:0x%04x\n",
 			 endptr + 1);
 	enc424j600_mem_read(priv, endptr + 1, sizeof(tsv), tsv);
+#endif
 }
 
 static void enc424j600_dump_tsv(struct enc424j600_net *priv, const char *msg,
 				u8 tsv[TSV_SIZE])
 {
+#if 0
 	u16 tmp1, tmp2;
 
 	printk(KERN_DEBUG DRV_NAME ": %s - TSV:\n", msg);
@@ -924,6 +852,7 @@ static void enc424j600_dump_tsv(struct enc424j600_net *priv, const char *msg,
 		 TSV_GETBIT(tsv, TSV_TXPAUSEFRAME),
 		 TSV_GETBIT(tsv, TSV_BACKPRESSUREAPP),
 		 TSV_GETBIT(tsv, TSV_TXVLANTAGFRAME));
+#endif
 }
 
 /*
@@ -932,6 +861,7 @@ static void enc424j600_dump_tsv(struct enc424j600_net *priv, const char *msg,
 static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
 			      u16 pk_ptr, int len, u16 sts)
 {
+#if 0
 	printk(KERN_DEBUG DRV_NAME ": %s - NextPk: 0x%04x - RSV:\n",
 		msg, pk_ptr);
 	printk(KERN_DEBUG DRV_NAME ": ByteCount: %d, DribbleNibble: %d\n", len,
@@ -953,6 +883,7 @@ static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
 		 RSV_GETBIT(sts, RSV_RXPAUSEFRAME),
 		 RSV_GETBIT(sts, RSV_RXUNKNOWNOPCODE),
 		 RSV_GETBIT(sts, RSV_RXTYPEVLAN));
+#endif
 }
 
 static void dump_packet(const char *msg, int len, const char *data)
@@ -969,6 +900,7 @@ static void dump_packet(const char *msg, int len, const char *data)
  */
 static void enc424j600_hw_rx(struct net_device *ndev)
 {
+#if 0
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	struct sk_buff *skb = NULL;
 	u16 erxrdpt, next_packet, rxstat;
@@ -1073,6 +1005,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	/* we are done with this packet, decrement the packet counter */
 	nolock_reg_bfset(priv, ECON2, ECON2_PKTDEC);
 	mutex_unlock(&priv->lock);
+#endif
 }
 
 /*
@@ -1080,6 +1013,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
  */
 static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
 {
+#if 0
 	int epkcnt, erxst, erxnd, erxwr, erxrd;
 	int free_space;
 
@@ -1105,6 +1039,8 @@ static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
 		printk(KERN_DEBUG DRV_NAME ": %s() free_space = %d\n",
 			__func__, free_space);
 	return free_space;
+#endif
+	return 0;
 }
 
 /*
@@ -1112,6 +1048,7 @@ static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
  */
 static void enc424j600_check_link_status(struct net_device *ndev)
 {
+#if 0
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	u16 reg;
 	int duplex;
@@ -1133,10 +1070,12 @@ static void enc424j600_check_link_status(struct net_device *ndev)
 			dev_info(&ndev->dev, "link down\n");
 		netif_carrier_off(ndev);
 	}
+#endif
 }
 
 static void enc424j600_tx_clear(struct net_device *ndev, bool err)
 {
+#if 0
 	struct enc424j600_net *priv = netdev_priv(ndev);
 
 	if (err)
@@ -1152,6 +1091,7 @@ static void enc424j600_tx_clear(struct net_device *ndev, bool err)
 	}
 	locked_reg_bfclr(priv, ECON1, ECON1_TXRTS);
 	netif_wake_queue(ndev);
+#endif
 }
 
 /*
@@ -1164,6 +1104,7 @@ static void enc424j600_tx_clear(struct net_device *ndev, bool err)
  */
 static int enc424j600_rx_interrupt(struct net_device *ndev)
 {
+#if 0
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int pk_counter, ret;
 
@@ -1182,10 +1123,13 @@ static int enc424j600_rx_interrupt(struct net_device *ndev)
 		enc424j600_hw_rx(ndev);
 
 	return ret;
+#endif
+	return 0;
 }
 
 static void enc424j600_irq_work_handler(struct work_struct *work)
 {
+#if 0
 	struct enc424j600_net *priv =
 		container_of(work, struct enc424j600_net, irq_work);
 	struct net_device *ndev = priv->netdev;
@@ -1296,6 +1240,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 	locked_reg_bfset(priv, EIE, EIE_INTIE);
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() exit\n", __func__);
+#endif
 }
 
 /*
@@ -1305,6 +1250,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
  */
 static void enc424j600_hw_tx(struct enc424j600_net *priv)
 {
+#if 0
 	if (netif_msg_tx_queued(priv))
 		printk(KERN_DEBUG DRV_NAME
 			": Tx Packet Len:%d\n", priv->tx_skb->len);
@@ -1344,10 +1290,12 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 #endif
 	/* set TX request flag */
 	locked_reg_bfset(priv, ECON1, ECON1_TXRTS);
+#endif
 }
 
 static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *dev)
 {
+#if 0
 	struct enc424j600_net *priv = netdev_priv(dev);
 
 	if (netif_msg_tx_queued(priv))
@@ -1369,6 +1317,8 @@ static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *dev)
 	priv->tx_skb = skb;
 	schedule_work(&priv->tx_work);
 
+	return 0;
+#endif
 	return 0;
 }
 
@@ -1475,6 +1425,7 @@ static int enc424j600_net_close(struct net_device *dev)
  */
 static void enc424j600_set_multicast_list(struct net_device *dev)
 {
+#if 0
 	struct enc424j600_net *priv = netdev_priv(dev);
 	int oldfilter = priv->rxfilter;
 
@@ -1495,10 +1446,12 @@ static void enc424j600_set_multicast_list(struct net_device *dev)
 
 	if (oldfilter != priv->rxfilter)
 		schedule_work(&priv->setrx_work);
+#endif
 }
 
 static void enc424j600_setrx_work_handler(struct work_struct *work)
 {
+#if 0
 	struct enc424j600_net *priv =
 		container_of(work, struct enc424j600_net, setrx_work);
 
@@ -1519,6 +1472,7 @@ static void enc424j600_setrx_work_handler(struct work_struct *work)
 					ERXFCON_UCEN | ERXFCON_CRCEN |
 					ERXFCON_BCEN);
 	}
+#endif
 }
 
 static void enc424j600_restart_work_handler(struct work_struct *work)
@@ -1559,11 +1513,13 @@ enc424j600_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 	cmd->transceiver = XCVR_INTERNAL;
 	cmd->supported	= SUPPORTED_10baseT_Half
 			| SUPPORTED_10baseT_Full
+			| SUPPORTED_100baseT_Half
+			| SUPPORTED_100baseT_Full
 			| SUPPORTED_TP;
-	cmd->speed	= SPEED_10;
+	cmd->speed	= priv->speed100 ? SPEED_100 : SPEED_10;
 	cmd->duplex	= priv->full_duplex ? DUPLEX_FULL : DUPLEX_HALF;
 	cmd->port	= PORT_TP;
-	cmd->autoneg	= AUTONEG_DISABLE;
+	cmd->autoneg	= priv->autoneg ? AUTONEG_ENABLE : AUTONEG_DISABLE;
 
 	return 0;
 }
@@ -1635,7 +1591,7 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 	priv->netdev = dev;	/* priv to netdev reference */
 	priv->spi = spi;	/* priv to spi reference */
 	priv->msg_enable = netif_msg_init(debug.msg_enable,
-						ENC28J60_MSG_DEFAULT);
+						ENC424J600_MSG_DEFAULT);
 	mutex_init(&priv->lock);
 	INIT_WORK(&priv->tx_work, enc424j600_tx_work_handler);
 	INIT_WORK(&priv->setrx_work, enc424j600_setrx_work_handler);
@@ -1644,14 +1600,52 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 	dev_set_drvdata(&spi->dev, priv);	/* spi to priv reference */
 	SET_NETDEV_DEV(dev, &spi->dev);
 
+	/* If requested, allocate DMA buffers */
+	if (enc424j600_enable_dma) {
+		spi->dev.coherent_dma_mask = ~0;
+
+		/*
+		 * Minimum coherent DMA allocation is PAGE_SIZE, so allocate
+		 * that much and share it between Tx and Rx DMA buffers.
+		 */
+		priv->spi_tx_buf = dma_alloc_coherent(&spi->dev,
+						      PAGE_SIZE,
+						      &priv->spi_tx_dma,
+						      GFP_DMA);
+
+		if (priv->spi_tx_buf) {
+			priv->spi_rx_buf = (u8 *)(priv->spi_tx_buf +
+						  (PAGE_SIZE / 2));
+			priv->spi_rx_dma = (dma_addr_t)(priv->spi_tx_dma +
+							(PAGE_SIZE / 2));
+		} else {
+			/* Fall back to non-DMA */
+			enc424j600_enable_dma = 0;
+		}
+	}
+
+	/* Allocate non-DMA buffers */
+	if (!enc424j600_enable_dma) {
+		priv->spi_tx_buf = kmalloc(SPI_TRANSFER_BUF_LEN, GFP_KERNEL);
+		if (!priv->spi_tx_buf) {
+			ret = -ENOMEM;
+			goto error_tx_buf;
+		}
+		priv->spi_rx_buf = kmalloc(SPI_TRANSFER_BUF_LEN, GFP_KERNEL);
+		if (!priv->spi_rx_buf) {
+			ret = -ENOMEM;
+			goto error_rx_buf;
+		}
+	}
+
 	if (!enc424j600_chipset_init(dev)) {
 		if (netif_msg_probe(priv))
 			dev_info(&spi->dev, DRV_NAME " chip not found\n");
 		ret = -EIO;
 		goto error_irq;
 	}
-	random_ether_addr(dev->dev_addr);
-	enc424j600_set_hw_macaddr(dev);
+
+	enc424j600_get_hw_macaddr(dev);
 
 	/* Board setup must set the relevant edge trigger type;
 	 * level triggers won't currently work.
@@ -1664,7 +1658,7 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 		goto error_irq;
 	}
 
-	dev->if_port = IF_PORT_10BASET;
+	dev->if_port = IF_PORT_10BASET; /* TODO: ?? */
 	dev->irq = spi->irq;
 	dev->netdev_ops = &enc424j600_netdev_ops;
 	dev->watchdog_timeo = TX_TIMEOUT;
@@ -1687,6 +1681,15 @@ error_register:
 	free_irq(spi->irq, priv);
 error_irq:
 	free_netdev(dev);
+	if (!enc424j600_enable_dma)
+		kfree(priv->spi_rx_buf);
+error_rx_buf:
+	if (!enc424j600_enable_dma)
+		kfree(priv->spi_tx_buf);
+error_tx_buf:
+	if (enc424j600_enable_dma)
+		dma_free_coherent(&spi->dev, PAGE_SIZE,
+				  priv->spi_tx_buf, priv->spi_tx_dma);
 error_alloc:
 	return ret;
 }
@@ -1735,3 +1738,5 @@ MODULE_AUTHOR("Kuba Marek <blue.cube@seznam.cz>");
 MODULE_LICENSE("GPL");
 module_param_named(debug, debug.msg_enable, int, 0);
 MODULE_PARM_DESC(debug, "Debug verbosity level (0=none, ..., ffff=all)");
+module_param(enc424j600_enable_dma, int, S_IRUGO);
+MODULE_PARM_DESC(enc424j600_enable_dma, "Enable SPI DMA. Default: 0 (Off)");
