@@ -138,7 +138,8 @@ void PWR_Init() {
 	// setup TIM3 to generate PWM on PB[01] pins
 	TIM_DeInit(TIM3);
 	TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-	TIM_TimeBaseStructure.TIM_Period = 0x3FFF; // 36MHz / 16368 = ~2.5KHz
+	TIM_TimeBaseStructure.TIM_Period = 0xFFF; // overflow at 
+rate of ~16kHz
 	TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
 	TIM_ARRPreloadConfig(TIM3, ENABLE);
 
@@ -154,7 +155,7 @@ void PWR_Init() {
 	// PB6 - ACSEL, PB7 - ENABLE
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOB, &GPIO_InitStructure);
 
 	PWR_ENABLE(Bit_RESET);
@@ -205,8 +206,8 @@ void PWR_ControlHandle() {
 
 void PWR_CurrentHandle() {
 	// update PWM compare registers
-	TIM3->CCR3 = PWR_I_Set.i_bat & 0x3FFF;
-	TIM3->CCR4 = PWR_I_Set.i_ac & 0x3FFF;
+	TIM3->CCR3 = PWR_I_Set.i_bat & 0xFFF;
+	TIM3->CCR4 = PWR_I_Set.i_ac & 0xFFF;
 	TIM3->EGR |= TIM_EGR_UG;
 }
 

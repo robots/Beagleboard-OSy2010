@@ -1,13 +1,13 @@
 
 
 * CAN controller:
--
+error recovery needs more testing
 
 * Power:
-OK ?
+OK
 
 * SYS:
 OK
 
 * SPI_Slave:
-- fix RX0 1 byte offset
+OK

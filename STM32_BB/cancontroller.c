@@ -92,6 +92,8 @@ void CANController_Init(void) {
 static void CANController_HW_Reinit(int first) {
 	// Reset CAN1 - clears the error state
 	CAN_DeInit(CAN1);
+
+	// setup filter to receive everything
 	CAN_FilterInit(&CAN_FilterInitStructure);
 
 	// enable intertrupts, TODO: less magic values !
@@ -113,6 +115,7 @@ static void CANController_HW_Reinit(int first) {
 	CANController_Error_Last = 0;
 
 	// apply the same setting
+	CANController_TimingHandle();
 	CANController_ControlHandle();
 
 }
@@ -241,7 +244,7 @@ void CANController_ControlHandle(void) {
 		if (CANController_Control & CAN_CTRL_INIT) {
 			CAN1->MCR |= CAN_MCR_INRQ;
 		} else {
-			CAN1->MCR |= CAN_MCR_TXFP | CAN_MCR_RFLM | CAN_MCR_AWUM | CAN_MCR_ABOM;
+			CAN1->MCR |= CAN_MCR_TXFP | CAN_MCR_RFLM | CAN_MCR_AWUM; //| CAN_MCR_ABOM;
 			CAN1->MCR &= ~(CAN_MCR_SLEEP | 0x10000); // we don't support sleep, no debug-freeze
 			CAN1->MCR &= ~CAN_MCR_INRQ; // leave init mode
 			CANController_Status &= ~CAN_STAT_INAK;
@@ -361,38 +364,38 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 void CAN1_SCE_IRQHandler(void) {
 	static uint16_t count = 0;
 
-	// if error happened, copy the state
-	CANController_Error = CAN1->ESR;
+	if (CAN1->ESR & (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF)) {
+		// if error happened, copy the state
+		CANController_Error = CAN1->ESR;
 
-	// abort msg transmission on Bus-Off
-	if (CAN1->ESR & CAN_ESR_BOFF) {
-		CAN1->TSR |= (CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2);
-	}
-	// clean flag - not working at all :(
-	CAN1->ESR &= ~ (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF);
-
-	// clear last error code
-	CAN1->ESR |= CAN_ESR_LEC;
-
-	// clear interrupt flag
-	CAN1->MSR &= ~CAN_MSR_ERRI;
-
-	// work around the bug in HW
-	// notify only on "new" error, otherwise reset can controller
-	if (CANController_Error ^ CANController_Error_Last) {
-		count = 0;
-		// notify host
-		SYS_SetIntFlag(SYS_INT_CANERRIF);
-	} else {
-		count ++;
-		if (count > 5) {
-			count = 0;
-			CANController_HW_Reinit(0);
-			SYS_SetIntFlag(SYS_INT_CANRSTIF);
+		// abort msg transmission on Bus-Off
+		if (CAN1->ESR & CAN_ESR_BOFF) {
+			CAN1->TSR |= (CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2);
 		}
+		// clean flag - not working at all :(
+		CAN1->ESR &= ~ (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF);
+
+		// clear last error code
+		CAN1->ESR |= CAN_ESR_LEC;
+
+		// clear interrupt flag
+		CAN1->MSR &= ~CAN_MSR_ERRI;
+
+		// work around the bug in HW
+		// notify only on "new" error, otherwise reset can controller
+		if (CANController_Error ^ CANController_Error_Last) {
+			count = 0;
+			// notify host
+			SYS_SetIntFlag(SYS_INT_CANERRIF);
+		} else {
+			count ++;
+			if (count > 5) {
+				count = 0;
+				CANController_HW_Reinit(0);
+				SYS_SetIntFlag(SYS_INT_CANRSTIF);
+			}
+		}
+		CANController_Error_Last = CANController_Error;
 	}
-
-	CANController_Error_Last = CANController_Error;
-
 }
 
