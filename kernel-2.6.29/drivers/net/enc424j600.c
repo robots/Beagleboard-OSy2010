@@ -439,7 +439,31 @@ static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 da
  */
 static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 {
-	return 1;
+	struct enc424j600_net *priv = netdev_priv(ndev);
+	u16 maadr1;
+	u16 maadr2;
+	u16 maadr3;
+
+	mutex_lock(&priv->lock);
+
+	if (netif_msg_drv(priv))
+		printk(KERN_INFO DRV_NAME
+			": %s: Setting MAC address to %pM\n",
+			ndev->name, ndev->dev_addr);
+
+	enc424j600_read_16b_sfr(priv, MAADR3L, &maadr3);
+	ndev->dev_addr[0] = maadr3 >> 8;
+	ndev->dev_addr[1] = maadr3 & 0xff;;
+	enc424j600_read_16b_sfr(priv, MAADR2L, &maadr2);
+	ndev->dev_addr[2] = maadr2 >> 8;
+	ndev->dev_addr[3] = maadr2 & 0xff;;
+	enc424j600_read_16b_sfr(priv, MAADR1L, &maadr1);
+	ndev->dev_addr[4] = maadr1 >> 8;
+	ndev->dev_addr[5] = maadr1 & 0xff;;
+
+	mutex_unlock(&priv->lock);
+
+	return 0;
 }
 
 /*
@@ -447,35 +471,32 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
  */
 static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 {
-#if 0
-	int ret;
 	struct enc424j600_net *priv = netdev_priv(ndev);
 
+
 	mutex_lock(&priv->lock);
-	if (!priv->hw_enable) {
-		if (netif_msg_drv(priv))
-			printk(KERN_INFO DRV_NAME
-				": %s: Setting MAC address to %pM\n",
-				ndev->name, ndev->dev_addr);
-		/ * NOTE: MAC address in ENC28J60 is byte-backward * /
-		nolock_regb_write(priv, MAADR5, ndev->dev_addr[0]);
-		nolock_regb_write(priv, MAADR4, ndev->dev_addr[1]);
-		nolock_regb_write(priv, MAADR3, ndev->dev_addr[2]);
-		nolock_regb_write(priv, MAADR2, ndev->dev_addr[3]);
-		nolock_regb_write(priv, MAADR1, ndev->dev_addr[4]);
-		nolock_regb_write(priv, MAADR0, ndev->dev_addr[5]);
-		ret = 0;
-	} else {
+
+	if (priv->hw_enable) {
 		if (netif_msg_drv(priv))
 			printk(KERN_DEBUG DRV_NAME
 				": %s() Hardware must be disabled to set "
 				"Mac address\n", __func__);
-		ret = -EBUSY;
+		mutex_unlock(&priv->lock);
+		return -EBUSY;
 	}
+
+	if (netif_msg_drv(priv))
+		printk(KERN_INFO DRV_NAME
+			": %s: Setting MAC address to %pM\n",
+			ndev->name, ndev->dev_addr);
+
+	enc424j600_write_16b_sfr(priv, MAADR3L, ndev->dev_addr[1] | ndev->dev_addr[0] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR2L, ndev->dev_addr[3] | ndev->dev_addr[2] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR1L, ndev->dev_addr[5] | ndev->dev_addr[4] << 8);
+
 	mutex_unlock(&priv->lock);
-	return ret;
-#endif
-	return 1;
+
+	return 0;
 }
 
 /*
@@ -1555,6 +1576,8 @@ static int enc424j600_chipset_init(struct net_device *dev)
 	struct enc424j600_net *priv = netdev_priv(dev);
 
 	return enc424j600_hw_init(priv);
+	enc424j600_get_hw_macaddr(dev);
+
 }
 
 static const struct net_device_ops enc424j600_netdev_ops = {
@@ -1644,8 +1667,6 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 		ret = -EIO;
 		goto error_irq;
 	}
-
-	enc424j600_get_hw_macaddr(dev);
 
 	/* Board setup must set the relevant edge trigger type;
 	 * level triggers won't currently work.
