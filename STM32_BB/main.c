@@ -13,6 +13,7 @@
 
 #include "platform.h"
 
+volatile uint32_t DEBUG_ON = 2;
 
 #ifdef VECT_TAB_RAM
 /* vector-offset (TBLOFF) from bottom of SRAM. defined in linker script */
@@ -43,14 +44,10 @@ void GPIO_Configuration(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-#ifndef NDEBUG
-	// disable JTAG !!!
-	if (DEBUG_ON == 0) {
-#endif
+	// JTAG enabled in debug mode !!! (see also .gdbinit)
+	if (DEBUG_ON != 1) {
 		GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
-#ifndef NDEBUG
 	}
-#endif
 
 	// set PA[0-4] as analog inputs
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;
@@ -58,16 +55,16 @@ void GPIO_Configuration(void)
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	// set LED push pull
+	// set LEDs
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	// pins to HiZ state
-	LED_RED(Bit_SET);
-	LED_GREEN(Bit_RESET);
-	LED_YELLOW(Bit_SET);
+	// pins to default state
+	LED_RED(Bit_SET); // off
+	LED_GREEN(Bit_SET); // off
+	LED_YELLOW(Bit_SET); // off
 }
 
 int main(void)
@@ -77,20 +74,21 @@ int main(void)
 
 	// NVIC configuration
 	NVIC_Configuration();
-	//NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
 
 	// Configure the GPIO ports
 	GPIO_Configuration();
 
-	SYS_Init();
+	__disable_irq();
 	PWR_Init();
 	CANController_Init();
 	SPI1_Slave_Init();
-	LED_GREEN(Bit_RESET);
+	SYS_Init();
+
+	LED_GREEN(Bit_RESET); // on
+	__enable_irq();
 
 	while (1) {
 		SPI1_Worker();
 		CANController_Worker();
 	}
 }
-

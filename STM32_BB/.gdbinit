@@ -21,7 +21,7 @@ define can_enable
 	call CANController_ControlHandle ()
 	set variable CANController_Timing = { 0x03, 0x115 }
 	call CANController_TimingHandle()
-	set variable CANController_Control = 0
+	set variable CANController_Control = 0x20
 	call CANController_ControlHandle ()
 	set variable CANController_TXBuffer = {0x3, 0x80, {12,23,43 , 12,23,23,23,23}}
 	set variable SYS_InterruptEnable = 0x000f
