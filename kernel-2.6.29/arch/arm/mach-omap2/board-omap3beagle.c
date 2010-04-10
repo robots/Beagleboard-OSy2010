@@ -346,7 +346,7 @@ static struct spi_board_info beagle_spi_board_info[] = {
 	{
 		.modalias	= "enc424j600",
 		.chip_select	= 0,
-		.max_speed_hz	= 12*1000*1000,
+		.max_speed_hz	= 14*1000*1000,
 		.bus_num	= 4,
 		.mode = SPI_MODE_0 | SPI_CS_HIGH,
 	},
