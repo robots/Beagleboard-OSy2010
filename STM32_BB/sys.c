@@ -10,10 +10,6 @@
 
 #include "sys.h"
 
-#ifndef NDEBUG
-uint32_t DEBUG_ON = 0;
-#endif
-
 volatile uint16_t SYS_InterruptEnable = 0x0000;
 volatile uint16_t SYS_InterruptFlag = 0x0000;
 const uint16_t SYS_Identifier = 0xCAFE;
@@ -28,12 +24,12 @@ void SYS_Init() {
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
+	// leave the pin in Hi-Z
+	SPI_INT_WRITE(Bit_SET);
+	LED_YELLOW(Bit_SET);
+
 	SYS_InterruptEnable = 0x0000;
 	SYS_InterruptFlag = 0x0000;
-
-	// leave the pin in Hi-Z
-	LED_YELLOW(Bit_SET);
-	SPI_INT_WRITE(Bit_SET);
 }
 
 void SYS_SetIntFlag(uint16_t in) {
@@ -59,16 +55,16 @@ void SYS_IntFlagWriteHandle(void) {
 	}
 }
 
+extern volatile uint16_t DEBUG_ON;
+
 void SYS_ResetHandler(void) {
-#ifndef NDEBUG
-	if (DEBUG_ON == 1) 
+	if (DEBUG_ON == 1)
 		return;
-#endif
 
 	if (SYS_Reset == SYS_RESET_MAGIC) {
 		SYS_Reset = 0x0000;
 
-		// show the world we are down 
+		// show the world we are down
 		LED_GREEN(Bit_SET);
 
 		// do reset

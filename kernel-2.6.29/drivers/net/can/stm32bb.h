@@ -55,6 +55,7 @@
 #define CAN_CTRL_SILM  0x0008 /* Listen only - silent mode */
 #define CAN_CTRL_RST   0x0010 /* bxCan master reset */
 #define CAN_CTRL_ABOM  0x0020 /* Automatic Bus-Off Management*/
+#define CAN_CTRL_IERR  0x0080 /* Error handling enable */
 
 /* status bit fields */
 #define CAN_STAT_TXF   0x0001 /* TX fifo Full */

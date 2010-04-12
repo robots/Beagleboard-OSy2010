@@ -183,7 +183,6 @@ static void stm32bb_write_reg(struct spi_device *spi, uint8_t reg, uint32_t val,
 	mutex_unlock(&priv->spi_lock);
 }
 
-// toto je kombinacia 2 funkcii ktore tu boli v mcp251x, lebo sme jednoduchsi, len to posle po spi data pre TX0
 static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
@@ -293,7 +292,7 @@ static void stm32bb_set_current(struct spi_device *spi)
 	buf[2] = 0xff & priv->pwr_iset.i_bat;
 	buf[3] = 0xff & (priv->pwr_iset.i_bat >> 8);
 
-	stm32bb_spi_trans(spi, 2+8);// 2 cmd + 8
+	stm32bb_spi_trans(spi, 2+4);// 2 cmd + 4
 	mutex_unlock(&priv->spi_lock);
 }
 
@@ -329,6 +328,11 @@ static void stm32bb_set_normal_mode(struct spi_device *spi)
 	stm32bb_write_reg(spi, SYS_INTE, reg, 2);
 
 	reg = stm32bb_read_reg(spi, CAN_CTRL, 2);
+
+	/* enable error reporting */
+	reg |= CAN_CTRL_IERR;
+	/* enable automatic bus-off managenment */
+	// reg |= CAN_CTRL_ABOM;
 
 	if (priv->can.ctrlmode & CAN_CTRLMODE_LOOPBACK) {
 		/* Put device into loopback mode */
@@ -618,7 +622,6 @@ static void stm32bb_tx_work_handler(struct work_struct *ws)
 	}
 }
 
-//TODO error recovery and PM
 static void stm32bb_irq_work_handler(struct work_struct *ws)
 {
 	struct stm32bb_priv *priv = container_of(ws, struct stm32bb_priv,
@@ -683,7 +686,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 			/* make snapshot of can status reg */
 			can_status = stm32bb_read_reg(spi, CAN_STATUS, 2);
-dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
+//dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
 			if (intf & SYS_INT_CANERRIF) {
 				eflag = stm32bb_read_reg(spi, CAN_ERR, 4);
 				dev_err(&spi->dev, "ISR: Error: 0x%04x\n", eflag);
@@ -756,7 +759,7 @@ dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
 
 			/* Data in FIFO0 */
 			if (intf & SYS_INT_CANRX0IF) {
-				dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs\n", (can_status >> 8) & 0x0f);
+//dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs\n", (can_status >> 8) & 0x0f);
 				// be sure to eat up all messages
 				for (i = 0; i < ((can_status >> 8) & 0x0f); i++)
 					stm32bb_hw_rx(spi, 0);
@@ -764,7 +767,7 @@ dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
 
 			/* Message TX interrupt  */
 			if (intf & SYS_INT_CANTXIF) {
-				dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
+//dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
 				if (can_status & CAN_STAT_ALST) {
 					priv->can.can_stats.arbitration_lost++;
 					dev_warn(&spi->dev, "Arbitration lost !\n");
@@ -818,7 +821,8 @@ dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
 					printk("Adapter unpluged !!\n");
 				}
 			}
-		} // end of power*/
+		} // end of power
+*/
 	} // while
 }
 
@@ -1035,14 +1039,29 @@ static ssize_t set_pwrctrl(struct device *dev,
 
 static DEVICE_ATTR(pwr_control, S_IRUGO | S_IWUSR, show_pwrctrl, set_pwrctrl);
 
+static ssize_t
+show_pwrstatus(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct stm32bb_priv *priv = dev_get_drvdata(dev);
+	struct spi_device *spi = priv->spi;
+	uint16_t reg;
+
+	reg = stm32bb_read_reg(spi, PWR_STATUS, 2);
+
+	return sprintf(buf, "%u\n", reg & 0x03);
+}
+
+static DEVICE_ATTR(pwr_status, S_IRUGO, show_pwrstatus, NULL);
+
 static struct attribute *stm32bb_sysfs_entries[] = {
 	&dev_attr_charge_current.attr,
 	&dev_attr_pwr_control.attr,
+	&dev_attr_pwr_status.attr,
 	NULL,
 };
 
 static struct attribute_group stm32bb_attr_group = {
-	.name	= "control",			/* put in device directory */
+	.name	= "power-control",			/* put in device directory */
 	.attrs	= stm32bb_sysfs_entries,
 };
 

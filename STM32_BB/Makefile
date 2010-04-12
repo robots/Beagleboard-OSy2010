@@ -1,10 +1,9 @@
 TCHAIN_PREFIX = arm-softfloat-elf-
 
 
-# YES enables -mthumb option to flags for source-files listed 
+# YES enables -mthumb option to flags for source-files listed
 # in SRC and CPPSRC and -mthumb-interwork option for all source
 USE_THUMB_MODE = YES
-#USE_THUMB_MODE = NO
 
 # MCU name, submodel and board
 # - MCU used for compiler-option (-mcpu)
@@ -130,8 +129,6 @@ ASRCARM =
 # List any extra directories to look for include files here.
 #    Each directory must be seperated by a space.
 EXTRAINCDIRS  = $(STMSPDINCDIR) $(CMSISDIR)
-EXTRAINCDIRS  += $(RTOSINCDIR)
-EXTRAINCDIRS  += $(MEMSDIR)
 #EXTRAINCDIRS  += $(STMEEEMULINCDIR)
 #EXTRAINCDIRS  += $(STMUSBINCDIR)
 
@@ -179,16 +176,13 @@ CDEFS += -DHSE_VALUE=$(F_XTAL)UL
 CDEFS += -D$(SYSCLOCK_CL)
 CDEFS += -DUSE_STDPERIPH_DRIVER
 #CDEFS += -DUSE_$(BOARD)
-#CDEFS += -DSTM32_SD_USE_DMA
 CDEFS += -DSTARTUP_DELAY
 # enable modifications in STM's libraries
 CDEFS += -DMOD_MTHOMAS_STMLIB
-# enable modifications in ChaN's FAT-module
-##CDEFS += -DMOD_MTHOMAS_FFAT
 # enable parameter-checking in STM's library
 #CDEFS += -DUSE_FULL_ASSERT
 
-# Place project-specific -D and/or -U options for 
+# Place project-specific -D and/or -U options for
 # Assembler with preprocessor here.
 ADEFS = -D__ASSEMBLY__
 
@@ -198,7 +192,6 @@ ADEFS = -D__ASSEMBLY__
 # c99   - ISO C99 standard (not yet fully implemented)
 # gnu99 - c99 plus GCC extensions
 CSTANDARD = -std=gnu99
-
 #-----
 
 ifdef VECTOR_TABLE_LOCATION
@@ -224,16 +217,17 @@ THUMB    = -mthumb
 # Flags for C and C++ (arm-elf-gcc/arm-elf-g++)
 CFLAGS =  -g$(DEBUG)
 CFLAGS += -O$(OPT)
-CFLAGS += -mcpu=$(MCU) $(THUMB_IW)  
+CFLAGS += -mcpu=$(MCU)
 CFLAGS += $(CDEFS)
 CFLAGS += $(patsubst %,-I%,$(EXTRAINCDIRS)) -I.
 # when using ".ramfunc"s without longcall:
 ##CFLAGS += -mlong-calls
 # -mapcs-frame is important if gcc's interrupt attributes are used
-# (at least from my eabi tests), not needed if assembler-wrapper is used 
-##CFLAGS += -mapcs-frame 
+# (at least from my eabi tests), not needed if assembler-wrapper is used
+##CFLAGS += -mapcs-frame
 ##CFLAGS += -fomit-frame-pointer
-CFLAGS += -ffunction-sections -fdata-sections
+CFLAGS += -ffunction-sections
+CFLAGS += -fdata-sections
 #CFLAGS += -fpromote-loop-indices
 CFLAGS += -Wall -Wextra
 CFLAGS += -Wimplicit -Wcast-align -Wpointer-arith
@@ -244,12 +238,12 @@ CFLAGS += -Wa,-adhlns=$(addprefix $(OUTDIR)/, $(notdir $(addsuffix .lst, $(basen
 CFLAGS += -MD -MP -MF $(OUTDIR)/dep/$(@F).d
 
 # flags only for C
-CONLYFLAGS += -Wnested-externs 
+CONLYFLAGS += -Wnested-externs
 CONLYFLAGS += $(CSTANDARD)
 
 # flags only for C++ (arm-elf-g++)
 CPPFLAGS = -fno-rtti -fno-exceptions
-CPPFLAGS = 
+CPPFLAGS =
 
 # Assembler flags.
 #  -Wa,...:    tell GCC to pass this to the assembler.
@@ -276,13 +270,12 @@ LDFLAGS += -lc
 LDFLAGS += $(patsubst %,-l%,$(EXTRA_LIBS))
 #LDFLAGS += $(MATH_LIB)
 LDFLAGS += $(CPLUSPLUS_LIB)
-#LDFLAGS += -lc -lgcc 
+#LDFLAGS += -lc -lgcc
 
 # Set linker-script name depending on selected run-mode and submodel name
 ifeq ($(RUN_MODE),RAM_RUN)
 LDFLAGS +=-T$(LINKERSCRIPTPATH)/$(CHIP)_ram.ld
 else 
-#LDFLAGS +=-T$(LINKERSCRIPTPATH)/$(CHIP)_freertos_flash.ld
 LDFLAGS +=-T$(LINKERSCRIPTPATH)/$(CHIP)_flash.ld
 endif
 
@@ -336,7 +329,7 @@ DEPFILES   = $(addprefix $(OUTDIR)/dep/, $(addsuffix .o.d, $(ALLSRCBASE)))
 all: begin gccversion build sizeafter finished end
 
 elf: $(OUTDIR)/$(TARGET).elf
-lss: $(OUTDIR)/$(TARGET).lss 
+lss: $(OUTDIR)/$(TARGET).lss
 sym: $(OUTDIR)/$(TARGET).sym
 hex: $(OUTDIR)/$(TARGET).hex
 bin: $(OUTDIR)/$(TARGET).bin

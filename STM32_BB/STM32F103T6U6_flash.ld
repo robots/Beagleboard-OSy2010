@@ -12,14 +12,8 @@ ENTRY(Reset_Handler)
 MEMORY
 {
   RAM      (RWX) : ORIGIN = 0x20000000+0, LENGTH = 10K-0
-  EXTSRAM  (RWX) : ORIGIN = 0x68000000, LENGTH = 0
   FLASH    (RX)  : ORIGIN = 0x08000000+0, LENGTH = 32K-0k
   EEMUL    (RWX) : ORIGIN = 0x08000000+32k-0k, LENGTH = 0k
-  FLASHB1  (RX)  : ORIGIN = 0x00000000, LENGTH = 0
-  EXTMEMB0 (RX)  : ORIGIN = 0x00000000, LENGTH = 0
-  EXTMEMB1 (RX)  : ORIGIN = 0x00000000, LENGTH = 0
-  EXTMEMB2 (RX)  : ORIGIN = 0x00000000, LENGTH = 0
-  EXTMEMB3 (RX)  : ORIGIN = 0x00000000, LENGTH = 0
 }
 
 /* higher address of the user mode stack */
@@ -67,7 +61,7 @@ SECTIONS
         . = .;
         . = ALIGN(4);
         /* This is used by the startup in order to initialize the .data section */
-        _sdata = . ;
+        PROVIDE (_sdata = . );
 
         . = ALIGN(0x80);
         _isr_vectorsram_offs = . - 0x20000000;
@@ -76,10 +70,11 @@ SECTIONS
 
         *(.ramfunc*)
         . = ALIGN(4);
-        *(.data .data.* .gnu.linkonce.d.*)
+        *(.data .data.*)
+        *(.gnu.linkonce.d.*)
         . = ALIGN(4);
         /* This is used by the startup in order to initialize the .data section */
-        _edata = . ;
+        PROVIDE (_edata = . );
     } >RAM
 
 
@@ -88,18 +83,18 @@ SECTIONS
     {
         . = ALIGN(4);
         /* This is used by the startup in order to initialize the .bss section */
-        _sbss = .;
+        PROVIDE (_sbss = .);
         *(.bss .bss.*)
         *(COMMON)
         . = ALIGN(4);
          /* This is used by the startup in order to initialize the .bss section */
-         _ebss = . ;
+         PROVIDE (_ebss = . );
     } >RAM
 
     PROVIDE ( end = _ebss );
     PROVIDE ( _end = _ebss );
 
-    /* This is the user stack section 
+    /* This is the user stack section
     This is just to check that there is enough RAM left for the User mode stack
     It should generate an error if it's full.
      */
@@ -113,56 +108,8 @@ SECTIONS
     } >RAM
 
 
-    /* this is the FLASH Bank1 */
-    /* the C or assembly source must explicitly place the code or data there
-    using the "section" attribute */
-    .b1text :
-    {
-        *(.b1text)                   /* remaining code */
-        *(.b1rodata)                 /* read-only data (constants) */
-        *(.b1rodata*)
-    } >FLASHB1
-
-    /* this is the EXTMEM */
-    /* the C or assembly source must explicitly place the code or data there
-    using the "section" attribute */
-
-    /* EXTMEM Bank0 */
-    .eb0text :
-    {
-        *(.eb0text)                   /* remaining code */
-        *(.eb0rodata)                 /* read-only data (constants) */
-        *(.eb0rodata*)
-    } >EXTMEMB0
-
-    /* EXTMEM Bank1 */
-    .eb1text :
-    {
-        *(.eb1text)                   /* remaining code */
-        *(.eb1rodata)                 /* read-only data (constants) */
-        *(.eb1rodata*)
-    } >EXTMEMB1
-    
-    /* EXTMEM Bank2 */
-    .eb2text :
-    {
-        *(.eb2text)                   /* remaining code */
-        *(.eb2rodata)                 /* read-only data (constants) */
-        *(.eb2rodata*)
-    } >EXTMEMB2
-    
-    /* EXTMEM Bank0 */
-    .eb3text :
-    {
-        *(.eb3text)                   /* remaining code */
-        *(.eb3rodata)                 /* read-only data (constants) */
-        *(.eb3rodata*)
-    } >EXTMEMB3
-    
-    
-    
     /* after that it's only debugging information. */
-    
+
     /* remove the debugging information from the standard libraries */
 /*    DISCARD :
     {

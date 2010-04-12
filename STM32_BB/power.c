@@ -19,6 +19,8 @@ volatile uint16_t PWR_Control = 0x0000;
 volatile uint16_t PWR_Control_Last = 0x0000;
 volatile uint16_t PWR_Status = 0x0000;
 
+static NVIC_InitTypeDef EXT_Int;
+
 void PWR_Init() {
 	ADC_InitTypeDef ADC_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
@@ -31,6 +33,8 @@ void PWR_Init() {
 	PWR_Control = 0;
 	PWR_Control_Last = 0;
 	PWR_Status = 0;
+
+	SYS_ClrIntFlag(SYS_INT_PWRMASK);
 
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
@@ -110,15 +114,9 @@ void PWR_Init() {
 	EXTI_Init(&EXTI_InitStructure);
 
 	// enable interrupt at NVIC
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 15;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-
-	NVIC_InitStructure.NVIC_IRQChannel = EXTI9_5_IRQn;
-	NVIC_Init(&NVIC_InitStructure);
-
-	NVIC_InitStructure.NVIC_IRQChannel = EXTI2_IRQn;
-	NVIC_Init(&NVIC_InitStructure);
+	EXT_Int.NVIC_IRQChannelPreemptionPriority = 15;
+	EXT_Int.NVIC_IRQChannelSubPriority = 0;
+//	EXT_Int.NVIC_IRQChannelCmd = ENABLE;
 
 	// setup PWR_Status to show actual state of EXTI pins ?
 	if (PWR_ACPRES() == Bit_SET) {
@@ -138,7 +136,7 @@ void PWR_Init() {
 	// setup TIM3 to generate PWM on PB[01] pins
 	TIM_DeInit(TIM3);
 	TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-	TIM_TimeBaseStructure.TIM_Period = 0x3FFF; // 36MHz / 16368 = ~2.5KHz
+	TIM_TimeBaseStructure.TIM_Period = 0xFFF; // overflow at rate of ~16kHz
 	TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
 	TIM_ARRPreloadConfig(TIM3, ENABLE);
 
@@ -154,7 +152,7 @@ void PWR_Init() {
 	// PB6 - ACSEL, PB7 - ENABLE
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOB, &GPIO_InitStructure);
 
 	PWR_ENABLE(Bit_RESET);
@@ -187,8 +185,22 @@ void PWR_ControlHandle() {
 	if (change & PWR_CTRL_EN) {
 		if (PWR_Control & PWR_CTRL_EN) {
 			PWR_ENABLE(Bit_SET);
+			EXT_Int.NVIC_IRQChannelCmd = ENABLE;
+
+			EXT_Int.NVIC_IRQChannel = EXTI9_5_IRQn;
+			NVIC_Init(&EXT_Int);
+
+			EXT_Int.NVIC_IRQChannel = EXTI2_IRQn;
+			NVIC_Init(&EXT_Int);
 		} else {
 			PWR_ENABLE(Bit_RESET);
+			EXT_Int.NVIC_IRQChannelCmd = DISABLE;
+
+			EXT_Int.NVIC_IRQChannel = EXTI9_5_IRQn;
+			NVIC_Init(&EXT_Int);
+
+			EXT_Int.NVIC_IRQChannel = EXTI2_IRQn;
+			NVIC_Init(&EXT_Int);
 		}
 	}
 
@@ -205,8 +217,8 @@ void PWR_ControlHandle() {
 
 void PWR_CurrentHandle() {
 	// update PWM compare registers
-	TIM3->CCR3 = PWR_I_Set.i_bat & 0x3FFF;
-	TIM3->CCR4 = PWR_I_Set.i_ac & 0x3FFF;
+	TIM3->CCR3 = PWR_I_Set.i_bat & 0xFFF;
+	TIM3->CCR4 = PWR_I_Set.i_ac & 0xFFF;
 	TIM3->EGR |= TIM_EGR_UG;
 }
 
