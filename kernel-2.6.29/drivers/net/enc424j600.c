@@ -528,6 +528,15 @@ static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
 #endif
 }
 
+/* Waits for autonegotiation to complete and sets FULDPX bit in macon2. */
+static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
+{
+	u16 phstat1;
+
+	do {
+		enc424j600_phy_read(priv, PHSTAT1, &phstat1);
+	} while(!(phstat1 & ANDONE));
+}
 
 /*
  * Reset and initialize the chip, but don't enable interrupts and don't
@@ -601,12 +610,8 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* If autonegotiation is enabled, we have to wait untill it finishes
 	 * and set the PHYDPX bit in MACON2 correctly */
 	if (priv->autoneg) {
-		u16 phstat1;
 		u8 estath;
-
-		do {
-			enc424j600_phy_read(priv, PHSTAT1, &phstat1);
-		} while(!(phstat1 & ANDONE));
+		enc424j600_wait_for_autoneg(priv);
 
 		/* read the PHYDPX bit in ESTAT and set FULDPX in MACON2 accordingly */
 		enc424j600_read_8b_sfr(priv, ESTATH, &estath);
@@ -962,31 +967,32 @@ static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
 /*
  * Access the PHY to determine link status
  */
-static void enc424j600_check_link_status(struct net_device *ndev)
+static void enc424j600_check_link_status(struct enc424j600_net *priv)
 {
-#if 0
-	struct enc424j600_net *priv = netdev_priv(ndev);
-	u16 reg;
-	int duplex;
+	u8 estath;
 
-	reg = enc424j600_phy_read(priv, PHSTAT2);
-	if (netif_msg_hw(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() PHSTAT1: %04x, "
-			"PHSTAT2: %04x\n", __func__,
-			enc424j600_phy_read(priv, PHSTAT1), reg);
-	duplex = reg & PHSTAT2_DPXSTAT;
+	enc424j600_read_8b_sfr(priv, ESTATH, &estath);
+	if (estath & PHYLNK) {
+		if (priv->autoneg) {
+			enc424j600_wait_for_autoneg(priv);
+			if (estath & PHYDPX) {
+				u16 macon2;
+				enc424j600_read_16b_sfr(
+					priv, MACON2L, &macon2);
+				macon2 |= FULDPX;
+				enc424j600_write_16b_sfr(
+					priv, MACON2L, macon2);
+			}
 
-	if (reg & PHSTAT2_LSTAT) {
-		netif_carrier_on(ndev);
+		}
+		netif_carrier_on(priv->netdev);
 		if (netif_msg_ifup(priv))
-			dev_info(&ndev->dev, "link up - %s\n",
-				duplex ? "Full duplex" : "Half duplex");
+			dev_info(&(priv->netdev->dev), "link up\n");
 	} else {
 		if (netif_msg_ifdown(priv))
-			dev_info(&ndev->dev, "link down\n");
-		netif_carrier_off(ndev);
+			dev_info(&(priv->netdev->dev), "link down\n");
+		netif_carrier_off(priv->netdev);
 	}
-#endif
 }
 
 static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
@@ -1039,6 +1045,20 @@ static int enc424j600_rx_interrupt(struct net_device *ndev)
 	return ret;
 #endif
 	return 0;
+}
+
+static int enc424j600_int_link_handler(struct enc424j600_net *priv, int loop)
+{
+	loop++;
+	if (netif_msg_intr(priv))
+		printk(KERN_DEBUG DRV_NAME
+			": intLINK(%d)\n", loop);
+
+	/* we check more than is necessary here --
+	 * only PHYLNK would be needed. */
+	enc424j600_check_link_status(priv);
+
+	return loop;
 }
 
 static int enc424j600_int_tx_handler(struct enc424j600_net *priv, int loop)
@@ -1110,18 +1130,10 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 		enc424j600_read_16b_sfr(priv, EIRL, &intflags);
 		loop = 0;
 
-#if 0
 		/* LINK changed handler */
-		if ((intflags & EIR_LINKIF) != 0) {
-			loop++;
-			if (netif_msg_intr(priv))
-				printk(KERN_DEBUG DRV_NAME
-					": intLINK(%d)\n", loop);
-			enc424j600_check_link_status(ndev);
-			/* read PHIR to clear the flag */
-			enc424j600_phy_read(priv, PHIR);
+		if ((intflags & LINKIF) != 0) {
+			loop = enc424j600_int_link_handler(priv, loop);
 		}
-#endif
 		/* TX complete handler */
 		if ((intflags & TXIF) != 0) {
 			loop = enc424j600_int_tx_handler(priv, loop);
@@ -1326,7 +1338,7 @@ static int enc424j600_net_open(struct net_device *dev)
 	/* Enable interrupts */
 	enc424j600_hw_enable(priv);
 	/* check link status */
-	enc424j600_check_link_status(dev);
+	enc424j600_check_link_status(priv);
 	/* We are now ready to accept transmit requests from
 	 * the queueing layer of the networking.
 	 */
