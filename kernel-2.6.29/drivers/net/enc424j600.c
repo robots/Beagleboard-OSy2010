@@ -538,6 +538,35 @@ static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
 	} while(!(phstat1 & ANDONE));
 }
 
+/* Sets the protected area in rx buffer to be 2 bytes long
+ * (smallest allowed value)
+ * Takes care of the rx buffer wrapping */
+static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv, u16 rx_area_head)
+{
+	u16 tail = rx_area_head - 2;
+
+	if (tail < ERXST_VAL)
+		tail = SRAM_SIZE - 2;
+	
+	enc424j600_write_16b_sfr(priv, ERXTAILL, tail);
+}
+
+/* Prepare the receive buffer in the chip */
+static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
+{
+	/* ERXST (start of the rx buffer => its size) */
+	enc424j600_write_16b_sfr(priv, ERXSTL, ERXST_VAL);
+
+	/* pointer for writing next frame */
+	enc424j600_write_16b_sfr(priv, ERXHEADL, ERXST_VAL);
+
+	/* Where the next frame should be read. */
+	priv->next_pk_ptr = ERXST_VAL;
+
+	/* ERXTAIL (end of the unprocessed block) */
+	enc424j600_clear_unprocessed_rx_area(priv, ERXST_VAL);
+}
+
 /*
  * Reset and initialize the chip, but don't enable interrupts and don't
  * start receiving yet.
@@ -579,8 +608,8 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 			(eidledl & REVID_MASK) >> REVID_SHIFT);
 	
 
-	/* program ERXST (start of the rx buffer => its size) */
-	enc424j600_write_16b_sfr(priv, ERXSTL, ERXST_VAL);
+	/* Prepare the receive buffer */
+	enc424j600_prepare_rx_buffer(priv);
 
 	/* default filter mode: (unicast OR broadcast) AND crc valid */
 	enc424j600_write_16b_sfr(priv, ERXFCONL, UCEN | BCEN | CRCEN);
@@ -1014,37 +1043,17 @@ static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
 	netif_wake_queue(ndev);
 }
 
-/*
- * RX handler
- * ignore PKTIF because is unreliable! (look at the errata datasheet)
- * check EPKTCNT is the suggested workaround.
- * We don't need to clear interrupt flag, automatically done when
- * enc424j600_hw_rx() decrements the packet counter.
- * Returns how many packet processed.
- */
-static int enc424j600_rx_interrupt(struct net_device *ndev)
+static int enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv, int loop)
 {
-#if 0
-	struct enc424j600_net *priv = netdev_priv(ndev);
-	int pk_counter, ret;
+	loop++;
+	if (netif_msg_intr(priv))
+		printk(KERN_DEBUG DRV_NAME
+			": intRXAbt(%d)\n", loop);
+	mutex_lock(&priv->lock);
+	priv->netdev->stats.rx_dropped++;
+	mutex_unlock(&priv->lock);
 
-	pk_counter = locked_regb_read(priv, EPKTCNT);
-	if (pk_counter && netif_msg_intr(priv))
-		printk(KERN_DEBUG DRV_NAME ": intRX, pk_cnt: %d\n", pk_counter);
-	if (pk_counter > priv->max_pk_counter) {
-		/* update statistics */
-		priv->max_pk_counter = pk_counter;
-		if (netif_msg_rx_status(priv) && priv->max_pk_counter > 1)
-			printk(KERN_DEBUG DRV_NAME ": RX max_pk_cnt: %d\n",
-				priv->max_pk_counter);
-	}
-	ret = pk_counter;
-	while (pk_counter-- > 0)
-		enc424j600_hw_rx(ndev);
-
-	return ret;
-#endif
-	return 0;
+	return loop;
 }
 
 static int enc424j600_int_link_handler(struct enc424j600_net *priv, int loop)
@@ -1112,6 +1121,30 @@ static int enc424j600_int_tx_err_handler(struct enc424j600_net *priv, int loop)
 	return loop;
 }
 
+static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
+{
+	uint8_t pk_counter;
+	int ret;
+
+	enc424j600_read_8b_sfr(priv, ESTATL, &pk_counter);
+
+	if (pk_counter && netif_msg_intr(priv))
+		printk(KERN_DEBUG DRV_NAME ": intRX, pk_cnt: %d\n", pk_counter);
+	if (pk_counter > priv->max_pk_counter) {
+		/* update statistics */
+		priv->max_pk_counter = pk_counter;
+		if (netif_msg_rx_status(priv) && priv->max_pk_counter > 1)
+			printk(KERN_DEBUG DRV_NAME ": RX max_pk_cnt: %d\n",
+				priv->max_pk_counter);
+	}
+	ret = pk_counter;
+	while (pk_counter-- > 0)
+		enc424j600_hw_rx(priv->netdev);
+
+	return ret;
+}
+
+
 static void enc424j600_irq_work_handler(struct work_struct *work)
 {
 	struct enc424j600_net *priv =
@@ -1143,26 +1176,14 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 		if ((intflags & TXABTIF) != 0) {
 			loop = enc424j600_int_tx_err_handler(priv, loop);
 		}
-#if 0
 		/* RX Error handler */
-		if ((intflags & EIR_RXERIF) != 0) {
-			loop++;
-			if (netif_msg_intr(priv))
-				printk(KERN_DEBUG DRV_NAME
-					": intRXErr(%d)\n", loop);
-			/* Check free FIFO space to flag RX overrun */
-			if (enc424j600_get_free_rxfifo(priv) <= 0) {
-				if (netif_msg_rx_err(priv))
-					printk(KERN_DEBUG DRV_NAME
-						": RX Overrun\n");
-				ndev->stats.rx_dropped++;
-			}
-			locked_reg_bfclr(priv, EIR, EIR_RXERIF);
+		if ((intflags & RXABTIF) != 0) {
+			loop = enc424j600_int_rx_abbort_handler(priv, loop);
 		}
 		/* RX handler */
-		if (enc424j600_rx_interrupt(ndev))
-			loop++;
-#endif
+		if ((intflags & PKTIF) != 0) {
+			loop += enc424j600_int_received_packet_handler(priv);
+		}
 
 		enc424j600_clear_bits(priv, EIRL, intflags && 0xff);
 		enc424j600_clear_bits(priv, EIRH, intflags >> 8);
