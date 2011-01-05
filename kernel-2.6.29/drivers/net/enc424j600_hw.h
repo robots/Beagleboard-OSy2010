@@ -396,9 +396,6 @@
 
 #define TSV_SIZE	7
 
-/* SRAM size */
-#define ENC424J600_SRAM_END	0x5FFF
-
 #define ENC424J600_DEV_ID	0x1
 
 /* Configuration */
@@ -420,5 +417,15 @@
  * Must be word aligned (even).
  */
 #define RX_BUFFER_SIZE		(8 * MAX_FRAMELEN)
+
+
+/* Start of the general purpose area in sram */
+#define SRAM_GP_START		0x0
+
+/* SRAM size */
+#define SRAM_SIZE		0x6000
+
+/* Start of the receive buffer */
+#define ERXST_VAL		(SRAM_SIZE - RX_BUFFER_SIZE)
 
 #endif
