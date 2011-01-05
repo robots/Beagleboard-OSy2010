@@ -25,7 +25,7 @@ volatile uint32_t CANController_Error_Last = 0x0000;
 volatile struct can_timing_t CANController_Timing;
 
 volatile struct can_message_t *CANController_RX0;
-volatile struct can_message_t *CANController_RX1;
+volatile uint16_t RX0_Count = 0;
 volatile struct can_message_t CANController_TXBuffer;
 volatile struct can_message_t *CANController_TX;
 
@@ -151,13 +151,13 @@ void CANController_Rx0Handle(void) {
 
 	/* update status register */
 #if CAN_UPDATE_OPTIMISTIC
-	rx0_count = (CANController_Status & CAN_STAT_RX0) >> 8;
-	if (rx0_count > 0) rx0_count -= 1;
+	//RX0_Count = (CANController_Status & CAN_STAT_RX0) >> 8;
+	if (RX0_Count > 0) RX0_Count -= 1;
 #else
-	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+	RX0_Count = CANBuf_GetAvailable(&CANController_RX0Buffer);
 #endif
-	rx0_count <<= 8;
-	CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | (rx0_count & CAN_STAT_RX0);
+	CANController_Status &= ~CAN_STAT_RX0;
+	CANController_Status |= (RX0_Count << 8) & CAN_STAT_RX0;
 }
 
 /* new message to be transmitted */
@@ -331,7 +331,6 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
  */
 void USB_LP_CAN1_RX0_IRQHandler(void) {
 	static struct can_message_t *RX0;
-	static uint16_t rx0_count;
 
 	RX0 = CANBuf_GetWriteAddr(&CANController_RX0Buffer);
 	RX0->flags = 0x00;
@@ -376,13 +375,13 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 
 	// update Status
 #if CAN_UPDATE_OPTIMISTIC
-	rx0_count = (CANController_Status & CAN_STAT_RX0) >> 8;
-	if (rx0_count < 16) rx0_count += 1;
+	//RX0_Count = (CANController_Status & CAN_STAT_RX0) >> 8;
+	if (RX0_Count < CAN_BUFFER_SIZE) RX0_Count += 1;
 #else
-	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+	RX0_Count = CANBuf_GetAvailable(&CANController_RX0Buffer);
 #endif
-	rx0_count <<= 8;
-	CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | (rx0_count & CAN_STAT_RX0);
+	CANController_Status &= ~CAN_STAT_RX0;
+	CANController_Status |= (RX0_Count << 8) & CAN_STAT_RX0;
 
 	// notify host by interrupt
 	SYS_SetIntFlag(SYS_INT_CANRX0IF);
