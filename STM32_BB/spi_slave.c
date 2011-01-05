@@ -44,14 +44,10 @@ volatile uint8_t SPI1_Cmd;
 volatile uint8_t dummy;
 volatile uint8_t SPI1_Stat;
 
-/* queue for worker thread */
-//xQueueHandle xDMAQueue = NULL;
 
 /* callback */
 DMA_Callback_t DMA_Callback = NULL;
 volatile DMA_Callback_t DMA_Callback_Run = NULL;
-
-//static void taskDMAWorker( void *pvParameters );
 
 
 void SPI1_Slave_Init() {
@@ -59,9 +55,6 @@ void SPI1_Slave_Init() {
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 	DMA_InitTypeDef DMA_InitStructure;
-
-//	xDMAQueue = xQueueCreate(DMA_QUEUE_SIZE, sizeof(DMA_Callback_t));
-//	xTaskCreate( taskDMAWorker, ( signed char * ) "DMAWork", configMINIMAL_STACK_SIZE, NULL, DMA_WORKER_PRIORITY, NULL );
 
 	// Reset SPI1
 	SPI_I2S_DeInit(SPI1);

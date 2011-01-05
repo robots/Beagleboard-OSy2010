@@ -29,13 +29,25 @@ volatile struct can_message_t *CANController_TX;
 
 struct can_buffer_t CANController_RX0Buffer;
 
-static CAN_FilterInitTypeDef CAN_FilterInitStructure;
+static CAN_FilterInitTypeDef CAN_FilterInitStructure = {
+	.CAN_FilterNumber = 0,
+	.CAN_FilterMode = CAN_FilterMode_IdMask,
+	.CAN_FilterScale = CAN_FilterScale_32bit,
+	.CAN_FilterIdHigh = 0x0000,
+	.CAN_FilterIdLow = 0x0000,
+	.CAN_FilterMaskIdHigh = 0x0000,
+	.CAN_FilterMaskIdLow = 0x0000,
+	.CAN_FilterFIFOAssignment = 0,
+	.CAN_FilterActivation = ENABLE,
+};
 static NVIC_InitTypeDef CAN_Int;
 
 static void CANController_HW_Reinit(int first);
 
 void CANController_Init(void) {
-	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitTypeDef GPIO_InitStructure = {
+		.GPIO_Speed = GPIO_Speed_50MHz,
+	};
 
 	CANBuf_Init(&CANController_RX0Buffer);
 	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
@@ -47,28 +59,15 @@ void CANController_Init(void) {
 	// Configure CAN pin: RX
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_11;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	// Configure CAN pin: TX
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	CAN_Int.NVIC_IRQChannelPreemptionPriority = 14;
 	CAN_Int.NVIC_IRQChannelSubPriority = 0;
-
-	// CAN filter init - all messages to FIFO0
-	CAN_FilterInitStructure.CAN_FilterNumber=0;
-	CAN_FilterInitStructure.CAN_FilterMode=CAN_FilterMode_IdMask;
-	CAN_FilterInitStructure.CAN_FilterScale=CAN_FilterScale_32bit;
-	CAN_FilterInitStructure.CAN_FilterIdHigh=0x0000;
-	CAN_FilterInitStructure.CAN_FilterIdLow=0x0000;
-	CAN_FilterInitStructure.CAN_FilterMaskIdHigh=0x0000;
-	CAN_FilterInitStructure.CAN_FilterMaskIdLow=0x0000;
-	CAN_FilterInitStructure.CAN_FilterFIFOAssignment=0;
-	CAN_FilterInitStructure.CAN_FilterActivation=ENABLE;
 
 	CANController_Control_Last = 0;
 	CANController_Control = 0;
@@ -95,7 +94,7 @@ static void CANController_HW_Reinit(int first) {
 	// setup filter to receive everything
 	CAN_FilterInit(&CAN_FilterInitStructure);
 
-	// enable intertrupts, TODO: less magic values !
+	// enable intertrupts
 	//CAN1->IER = 0x00008F13; // enable all interrupts (except FIFOx full/overrun, sleep/wakeup)
 	CAN1->IER = CAN_IER_TMEIE | CAN_IER_FMPIE0;
 	CAN1->IER |= CAN_IER_EWGIE | CAN_IER_EPVIE | CAN_IER_BOFIE | CAN_IER_LECIE;

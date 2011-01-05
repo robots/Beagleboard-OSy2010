@@ -16,12 +16,13 @@ const uint16_t SYS_Identifier = 0xCAFE;
 volatile uint16_t SYS_Reset = 0x0000;
 
 void SYS_Init() {
-	GPIO_InitTypeDef GPIO_InitStructure;
-
 	// SPI Int as OD output
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
+	GPIO_InitTypeDef GPIO_InitStructure = {
+		.GPIO_Pin = GPIO_Pin_8,
+		.GPIO_Speed = GPIO_Speed_50MHz,
+		.GPIO_Mode = GPIO_Mode_Out_OD,
+	};
+
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	// leave the pin in Hi-Z

@@ -23,10 +23,23 @@ static NVIC_InitTypeDef EXT_Int;
 
 void PWR_Init() {
 	ADC_InitTypeDef ADC_InitStructure;
-	NVIC_InitTypeDef NVIC_InitStructure;
-	DMA_InitTypeDef DMA_InitStructure;
+	DMA_InitTypeDef DMA_InitStructure = {
+		.DMA_PeripheralBaseAddr = (uint32_t)&ADC1->DR,
+		.DMA_DIR = DMA_DIR_PeripheralSRC,
+		.DMA_PeripheralInc = DMA_PeripheralInc_Disable,
+		.DMA_MemoryBaseAddr = (uint32_t)&PWR_Measurement_Data,
+		.DMA_BufferSize = 4,
+		.DMA_MemoryInc = DMA_MemoryInc_Enable,
+		.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord,
+		.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord,
+		.DMA_Mode = DMA_Mode_Circular,
+		.DMA_Priority = DMA_Priority_Low,
+		.DMA_M2M = DMA_M2M_Disable,
+	};
 	EXTI_InitTypeDef EXTI_InitStructure;
-	GPIO_InitTypeDef GPIO_InitStructure;
+	GPIO_InitTypeDef GPIO_InitStructure = {
+		.GPIO_Speed = GPIO_Speed_50MHz,
+	};
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 	TIM_OCInitTypeDef TIM_OCInitStruct;
 
@@ -44,20 +57,7 @@ void PWR_Init() {
 	DMA_DeInit(DMA1_Channel1);
 	ADC_DeInit(ADC1);
 
-	// Init DMA structure
-	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&ADC1->DR;
-	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
-	DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-	DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)&PWR_Measurement_Data;
-	DMA_InitStructure.DMA_BufferSize = 4;
-	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
-	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord;
-	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
-	DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
-	DMA_InitStructure.DMA_Priority = DMA_Priority_Low;
-	DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
-
-	// Init DMA Channel (MEM->SPI)
+	// Init DMA Channel (AD->MEM)
 	DMA_Init(DMA1_Channel1, &DMA_InitStructure);
 
 	ADC_StructInit(&ADC_InitStructure);
@@ -94,7 +94,6 @@ void PWR_Init() {
 // setup external interrupts
 	// PB2 - ACPRES, PB5 - ALARM
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_5;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	GPIO_Init(GPIOB, &GPIO_InitStructure);
 
@@ -128,9 +127,6 @@ void PWR_Init() {
 
 // setup PWM output
 	// setup PB0 PB1 as AF_PP
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(GPIOB, &GPIO_InitStructure);
 
 	// setup TIM3 to generate PWM on PB[01] pins
@@ -151,7 +147,6 @@ void PWR_Init() {
 // setup output pins
 	// PB6 - ACSEL, PB7 - ENABLE
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(GPIOB, &GPIO_InitStructure);
 
