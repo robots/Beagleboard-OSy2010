@@ -1,0 +1,15 @@
+can_controller:
+
+- Most functions are either ISR or called from ISR, thus all operations
+	inside are atomic. (no interrupt nesting)
+- there is a major bug in the HW, resulting in bogus interrupts once
+	error state is detected. There is no other way to reset this state, than
+	to issue Peripheral reset. (purpose of CANController_HW_Reinit) 
+- if the error stat is still present, it will cause avalanche of interrupts
+	(needs fix :-) (this state also implies that there is some HW error, which
+	needs higher forces to fix it)
+
+
+spi_slave:
+- DMA callbacks need to be written efficiently not to stall the interrupt
+	handling too much. (when DMA_CB_ISR == 1)

@@ -13,6 +13,8 @@
 
 #include "cancontroller.h"
 
+// use optimistic update of can messages count in Status reg
+#define CAN_UPDATE_OPTIMISTIC 1
 
 volatile uint16_t CANController_Status = 0x0000;
 volatile uint16_t CANController_Control = 0x0000;
@@ -137,9 +139,25 @@ void CANController_Worker() {
 
 /* message has been read from RX0, shift the buffer */
 void CANController_Rx0Handle(void) {
+	// reading more than we have?
+	// this would cause the ring buffer to advance read pointer
+	// and would need at last CAN_BUFFER_SIZE messages to sync again
+	if (CANController_RX0->flags & CAN_MSG_INV)
+		return;
+
 	CANController_RX0->flags |= CAN_MSG_INV;
 	CANBuf_ReadDone(&CANController_RX0Buffer);
 	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
+
+	/* update status register */
+#if CAN_UPDATE_OPTIMISTIC
+	rx0_count = (CANController_Status & CAN_STAT_RX0) >> 8;
+	if (rx0_count > 0) rx0_count -= 1;
+#else
+	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+#endif
+	rx0_count <<= 8;
+	CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | (rx0_count & CAN_STAT_RX0);
 }
 
 /* new message to be transmitted */
@@ -357,7 +375,12 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 	CANBuf_WriteDone(&CANController_RX0Buffer);
 
 	// update Status
+#if CAN_UPDATE_OPTIMISTIC
+	rx0_count = (CANController_Status & CAN_STAT_RX0) >> 8;
+	if (rx0_count < 16) rx0_count += 1;
+#else
 	rx0_count = CANBuf_GetAvailable(&CANController_RX0Buffer);
+#endif
 	rx0_count <<= 8;
 	CANController_Status = (CANController_Status & ~CAN_STAT_RX0) | (rx0_count & CAN_STAT_RX0);
 
