@@ -31,6 +31,10 @@ typedef void (*DMA_Callback_t)();
 #define SPI1TXEI  (*((volatile unsigned long *) 0x4226009C))
 #define SPI1RXNEI (*((volatile unsigned long *) 0x42260098))
 
+
+// have the Callbacks run from DMA ISR
+#define DMA_CB_ISR 1
+
 enum {
 	SPI1_CMD,
 	SPI1_DATA
@@ -44,6 +48,8 @@ volatile uint8_t SPI1_Cmd;
 volatile uint8_t dummy;
 volatile uint8_t SPI1_Stat;
 
+// temporary buffer to save interrupt flag and others
+volatile uint32_t SPI1_TX_Tmp;
 
 /* callback */
 DMA_Callback_t DMA_Callback = NULL;
@@ -155,10 +161,12 @@ void SPI1_Slave_Init() {
 
 void SPI1_Worker()
 {
+#if DMA_CB_ISR == 0
 	if (DMA_Callback_Run != NULL) {
 		DMA_Callback_Run();
 		DMA_Callback_Run = NULL;
 	}
+#endif
 }
 
 void SPI1_IRQHandler(void) {
@@ -190,8 +198,15 @@ void DMA1_Channel2_IRQHandler(void) {
 		DMA1_Channel2->CNDTR = 1;
 		DMA1CH2EN = 1;
 
+#if DMA_CB_ISR
+		if (DMA_Callback) {
+			DMA_Callback();
+			DMA_Callback = NULL;
+		}
+#else
 		DMA_Callback_Run = DMA_Callback;
 		DMA_Callback = NULL;
+#endif
 
 		SPI1_DMA_Type = SPI1_CMD; // next is command
 	} else {
@@ -263,8 +278,13 @@ void DMA1_Channel2_IRQHandler(void) {
 					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptEnable);
 					break;
 				case SYS_INTF:
-					DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
-					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);
+					/* interrupt "read and clear" atomic */
+					SPI1_TX_Tmp = SYS_InterruptFlag;
+					SYS_ClrIntFlag(0xffff);
+					/*DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
+					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);*/
+					DMA1_Channel3->CMAR = (uint32_t)&SPI1_TX_Tmp;
+					DMA1_Channel3->CNDTR = sizeof(SPI1_TX_Tmp);
 					break;
 				case SYS_ID:
 					DMA1_Channel3->CMAR = (uint32_t)&SYS_Identifier;
@@ -337,8 +357,15 @@ void DMA1_Channel3_IRQHandler(void) {
 	dummy = SPI1->DR;
 
 	// send data to worker thread
+#if DMA_CB_ISR
+	if (DMA_Callback) {
+		DMA_Callback();
+		DMA_Callback = NULL;
+	}
+#else
 	DMA_Callback_Run = DMA_Callback;
 	DMA_Callback = NULL;
+#endif
 
 	// awaiting command in next transfer
 	SPI1_DMA_Type = SPI1_CMD;
