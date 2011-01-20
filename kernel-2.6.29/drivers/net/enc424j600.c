@@ -111,6 +111,7 @@ static int enc424j600_spi_trans(struct enc424j600_net *priv, int len)
 
 /*
  * Read data from chip SRAM.
+ * Returns 0 on success, negative error code otherwise.
  */
 static int enc424j600_read_sram(struct enc424j600_net *priv,
 			 u8 *dst, int len, u16 srcaddr)
@@ -121,7 +122,7 @@ static int enc424j600_read_sram(struct enc424j600_net *priv,
 		return -EINVAL;
 	}
 
-	/* First set the general purpose write pointer */
+	/* First set the general purpose read pointer */
 	priv->spi_tx_buf[0] = WGPRDPT;
 	priv->spi_tx_buf[1] = srcaddr & 0xFF;
 	priv->spi_tx_buf[2] = srcaddr >> 8;
@@ -140,6 +141,7 @@ static int enc424j600_read_sram(struct enc424j600_net *priv,
 
 /*
  * Write data to chip SRAM.
+ * Returns 0 on success, negative error code otherwise.
  */
 static int enc424j600_write_sram(struct enc424j600_net *priv,
 			 const u8 *src, int len, u16 dstaddr)
@@ -153,7 +155,7 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 	/* First set the general purpose write pointer */
 	priv->spi_tx_buf[0] = WGPWRPT;
 	priv->spi_tx_buf[1] = dstaddr & 0xFF;
-	priv->spi_tx_buf[2] = dstaddr >> 8;
+	priv->spi_tx_buf[2] = dstaddr >> 8;	
 	enc424j600_spi_trans(priv, 3);
 
 	/* Copy the data to the tx buffer */
@@ -283,7 +285,37 @@ static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *dat
 }
 
 /*
+ * Read memory from the wrapped RX area.
+ * Handles srcaddr that is behind the rx area end (this is wrapped
+ * as well).
+ */
+static int enc424j600_read_rx_area(struct enc424j600_net *priv,
+			 u8 *dst, int len, u16 srcaddr)
+{
+	int ret;
+	int split;
+
+	if (srcaddr >= SRAM_SIZE) {
+		srcaddr -= RX_BUFFER_SIZE;
+	}
+
+	if (srcaddr + len < SRAM_SIZE) {
+		return enc424j600_read_sram(priv, dst, len, srcaddr);
+	} else {
+		// length of the first half
+		split = SRAM_SIZE - srcaddr + 1;
+		ret = enc424j600_read_sram(priv, dst, split, srcaddr);
+		if (ret)
+			return ret;
+
+		return enc424j600_read_sram(priv, dst + split, len - split,
+			ERXST_VAL);
+	}
+}
+
+/*
  * Reset the enc424j600.
+ * (Datasheet: 8.1)
  * TODO: What if we get stuck on non-working spi with the initial
  * test access to EUDAST ?
  * TODO: Errors?
@@ -312,7 +344,7 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 
 	enc424j600_read_16b_sfr(priv, EUDASTL, &eudast);
 	if (netif_msg_hw(priv) && eudast != 0)
-		printk(KERN_DEBUG DRV_NAME ": %s() EUDASTL is not zero!\n", __func__);
+		printk(KERN_DEBUG DRV_NAME ": %s() EUDAST is not zero!\n", __func__);
 
 	udelay(500);
 }
@@ -370,6 +402,7 @@ static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 da
 
 /*
  * Read the hardware MAC address to dev->dev_addr.
+ * TODO: Check this
  */
 static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 {
@@ -402,6 +435,7 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 
 /*
  * Program the hardware MAC address from dev->dev_addr.
+ * TODO: Check this
  */
 static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 {
@@ -435,6 +469,7 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 
 /*
  * Store the new hardware address in dev->dev_addr, and update the MAC.
+ * TODO: Check this
  */
 static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
 {
@@ -451,6 +486,7 @@ static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
 
 /*
  * Debug routine to dump useful register contents
+ * TODO
  */
 static void enc424j600_dump_regs(struct enc424j600_net *priv, const char *msg)
 {
@@ -487,23 +523,10 @@ static void enc424j600_dump_regs(struct enc424j600_net *priv, const char *msg)
 }
 
 /*
- * Calculate wrap around when reading beyond the end of the RX buffer
- */
-static u16 rx_packet_start(u16 ptr)
-{
-#if 0
-	if (ptr + RSV_SIZE > RXEND_INIT)
-		return (ptr + RSV_SIZE) - (RXEND_INIT - RXSTART_INIT + 1);
-	else
-		return ptr + RSV_SIZE;
-#endif
-	return 0;
-}
-
-/*
  * Low power mode shrinks power consumption about 100x, so we'd like
  * the chip to be in that mode whenever it's inactive.  (However, we
  * can't stay in lowpower mode during suspend with WOL active.)
+ * TODO
  */
 static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
 {
@@ -541,9 +564,9 @@ static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
 /* Sets the protected area in rx buffer to be 2 bytes long
  * (smallest allowed value)
  * Takes care of the rx buffer wrapping */
-static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv, u16 rx_area_head)
+static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv)
 {
-	u16 tail = rx_area_head - 2;
+	u16 tail = priv->next_pk_ptr - 2;
 
 	if (tail < ERXST_VAL)
 		tail = SRAM_SIZE - 2;
@@ -551,20 +574,18 @@ static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv, u1
 	enc424j600_write_16b_sfr(priv, ERXTAILL, tail);
 }
 
-/* Prepare the receive buffer in the chip */
+/* Prepare the receive buffer in the chip
+ * Datasheet: 8.3, 9.2.1 */
 static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 {
 	/* ERXST (start of the rx buffer => its size) */
 	enc424j600_write_16b_sfr(priv, ERXSTL, ERXST_VAL);
 
-	/* pointer for writing next frame */
-	enc424j600_write_16b_sfr(priv, ERXHEADL, ERXST_VAL);
-
 	/* Where the next frame should be read. */
 	priv->next_pk_ptr = ERXST_VAL;
 
 	/* ERXTAIL (end of the unprocessed block) */
-	enc424j600_clear_unprocessed_rx_area(priv, ERXST_VAL);
+	enc424j600_clear_unprocessed_rx_area(priv);
 }
 
 /*
@@ -629,6 +650,9 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 			phcon1 |= PFULDPX;
 	}
 	enc424j600_phy_write(priv, PHCON1, phcon1);
+
+
+	// TODO: First PHY, then MAC ?
 
 	/* MACON2
 	 * defer transmission if collision occurs (only for half duplex)
@@ -748,65 +772,8 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 }
 
 /*
- * Read the Transmit Status Vector
- */
-static void enc424j600_read_tsv(struct enc424j600_net *priv, u8 tsv[TSV_SIZE])
-{
-#if 0
-	int endptr;
-
-	endptr = locked_regw_read(priv, ETXNDL);
-	if (netif_msg_hw(priv))
-		printk(KERN_DEBUG DRV_NAME ": reading TSV at addr:0x%04x\n",
-			 endptr + 1);
-	enc424j600_mem_read(priv, endptr + 1, sizeof(tsv), tsv);
-#endif
-}
-
-static void enc424j600_dump_tsv(struct enc424j600_net *priv, const char *msg,
-				u8 tsv[TSV_SIZE])
-{
-#if 0
-	u16 tmp1, tmp2;
-
-	printk(KERN_DEBUG DRV_NAME ": %s - TSV:\n", msg);
-	tmp1 = tsv[1];
-	tmp1 <<= 8;
-	tmp1 |= tsv[0];
-
-	tmp2 = tsv[5];
-	tmp2 <<= 8;
-	tmp2 |= tsv[4];
-
-	printk(KERN_DEBUG DRV_NAME ": ByteCount: %d, CollisionCount: %d,"
-		" TotByteOnWire: %d\n", tmp1, tsv[2] & 0x0f, tmp2);
-	printk(KERN_DEBUG DRV_NAME ": TxDone: %d, CRCErr:%d, LenChkErr: %d,"
-		" LenOutOfRange: %d\n", TSV_GETBIT(tsv, TSV_TXDONE),
-		TSV_GETBIT(tsv, TSV_TXCRCERROR),
-		TSV_GETBIT(tsv, TSV_TXLENCHKERROR),
-		TSV_GETBIT(tsv, TSV_TXLENOUTOFRANGE));
-	printk(KERN_DEBUG DRV_NAME ": Multicast: %d, Broadcast: %d, "
-		"PacketDefer: %d, ExDefer: %d\n",
-		TSV_GETBIT(tsv, TSV_TXMULTICAST),
-		TSV_GETBIT(tsv, TSV_TXBROADCAST),
-		TSV_GETBIT(tsv, TSV_TXPACKETDEFER),
-		TSV_GETBIT(tsv, TSV_TXEXDEFER));
-	printk(KERN_DEBUG DRV_NAME ": ExCollision: %d, LateCollision: %d, "
-		 "Giant: %d, Underrun: %d\n",
-		 TSV_GETBIT(tsv, TSV_TXEXCOLLISION),
-		 TSV_GETBIT(tsv, TSV_TXLATECOLLISION),
-		 TSV_GETBIT(tsv, TSV_TXGIANT), TSV_GETBIT(tsv, TSV_TXUNDERRUN));
-	printk(KERN_DEBUG DRV_NAME ": ControlFrame: %d, PauseFrame: %d, "
-		 "BackPressApp: %d, VLanTagFrame: %d\n",
-		 TSV_GETBIT(tsv, TSV_TXCONTROLFRAME),
-		 TSV_GETBIT(tsv, TSV_TXPAUSEFRAME),
-		 TSV_GETBIT(tsv, TSV_BACKPRESSUREAPP),
-		 TSV_GETBIT(tsv, TSV_TXVLANTAGFRAME));
-#endif
-}
-
-/*
  * Receive Status vector
+ * TODO
  */
 static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
 			      u16 pk_ptr, int len, u16 sts)
@@ -847,20 +814,23 @@ static void dump_packet(const char *msg, int len, const char *data)
  * Hardware receive function.
  * Read the buffer memory, update the FIFO pointer to free the buffer,
  * check the status vector and decrement the packet counter.
+ * TODO: Locking?
  */
 static void enc424j600_hw_rx(struct net_device *ndev)
 {
-#if 0
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	struct sk_buff *skb = NULL;
-	u16 erxrdpt, next_packet, rxstat;
+	u16 next_packet;
+	u32 rxstat;
 	u8 rsv[RSV_SIZE];
 	int len;
 
 	if (netif_msg_rx_status(priv))
 		printk(KERN_DEBUG DRV_NAME ": RX pk_addr:0x%04x\n",
 			priv->next_pk_ptr);
-
+	
+	// TODO corrupted packet addresses
+	#if 0
 	if (unlikely(priv->next_pk_ptr > RXEND_INIT)) {
 		if (netif_msg_rx_err(priv))
 			dev_err(&ndev->dev,
@@ -878,20 +848,14 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 		ndev->stats.rx_errors++;
 		return;
 	}
+	#endif
+	
 	/* Read next packet pointer and rx status vector */
-	enc424j600_mem_read(priv, priv->next_pk_ptr, sizeof(rsv), rsv);
+	enc424j600_read_rx_area(priv, rsv, sizeof(rsv), priv->next_pk_ptr);
 
-	next_packet = rsv[1];
-	next_packet <<= 8;
-	next_packet |= rsv[0];
-
-	len = rsv[3];
-	len <<= 8;
-	len |= rsv[2];
-
-	rxstat = rsv[5];
-	rxstat <<= 8;
-	rxstat |= rsv[4];
+	next_packet = rsv[0] | (rsv[1] << 8);
+	len = rsv[2] | (rsv[3] << 8);
+	rxstat = rsv[4] | (rsv[5] << 8) | (rsv[6] << 16);
 
 	if (netif_msg_rx_status(priv))
 		enc424j600_dump_rsv(priv, __func__, next_packet, len, rxstat);
@@ -900,9 +864,9 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 		if (netif_msg_rx_err(priv))
 			dev_err(&ndev->dev, "Rx Error (%04x)\n", rxstat);
 		ndev->stats.rx_errors++;
-		if (RSV_GETBIT(rxstat, RSV_CRCERROR))
+		if (RSV_GETBIT(rxstat, RSV_CRC_ERROR))
 			ndev->stats.rx_crc_errors++;
-		if (RSV_GETBIT(rxstat, RSV_LENCHECKERR))
+		if (RSV_GETBIT(rxstat, RSV_LENGTH_CHECK_ERROR))
 			ndev->stats.rx_frame_errors++;
 		if (len > MAX_FRAMELEN)
 			ndev->stats.rx_over_errors++;
@@ -917,9 +881,8 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 			skb->dev = ndev;
 			skb_reserve(skb, NET_IP_ALIGN);
 			/* copy the packet from the receive buffer */
-			enc424j600_mem_read(priv,
-				rx_packet_start(priv->next_pk_ptr),
-				len, skb_put(skb, len));
+			enc424j600_read_rx_area(priv, skb_put(skb, len), len,
+				priv->next_pk_ptr + RSV_SIZE);
 			if (netif_msg_pktdata(priv))
 				dump_packet(__func__, skb->len, skb->data);
 			skb->protocol = eth_type_trans(skb, ndev);
@@ -934,14 +897,8 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	 * received packet.
 	 * This frees the memory we just read out
 	 */
-	erxrdpt = erxrdpt_workaround(next_packet, RXSTART_INIT, RXEND_INIT);
-	if (netif_msg_hw(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() ERXRDPT:0x%04x\n",
-			__func__, erxrdpt);
-
 	mutex_lock(&priv->lock);
-	nolock_regw_write(priv, ERXRDPTL, erxrdpt);
-#ifdef CONFIG_ENC28J60_WRITEVERIFY
+#if 0 && defined(CONFIG_ENC28J60_WRITEVERIFY)
 	if (netif_msg_drv(priv)) {
 		u16 reg;
 		reg = nolock_regw_read(priv, ERXRDPTL);
@@ -952,18 +909,22 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	}
 #endif
 	priv->next_pk_ptr = next_packet;
+
+	/* unprotect the area that was used by this packet. */
+	enc424j600_clear_unprocessed_rx_area(priv);
+
 	/* we are done with this packet, decrement the packet counter */
-	nolock_reg_bfset(priv, ECON2, ECON2_PKTDEC);
+	enc424j600_set_bits(priv, ECON1H, PKTDEC);
 	mutex_unlock(&priv->lock);
-#endif
 }
 
+#if 0
 /*
  * Calculate free space in RxFIFO
+ * TODO: This function may come handy.
  */
 static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
 {
-#if 0
 	int epkcnt, erxst, erxnd, erxwr, erxrd;
 	int free_space;
 
@@ -989,9 +950,9 @@ static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
 		printk(KERN_DEBUG DRV_NAME ": %s() free_space = %d\n",
 			__func__, free_space);
 	return free_space;
-#endif
 	return 0;
 }
+#endif
 
 /*
  * Access the PHY to determine link status

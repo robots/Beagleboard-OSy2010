@@ -147,7 +147,7 @@
 #define PHSTAT3		0x1F
 
 /* Single-byte instructions */
-#define BXSEL(bank)	(0xC | (bank & (BANK_MASK >> BANK_SHIFT)) * 2)
+#define BXSEL(bank)	(0xC0 | (bank & (BANK_MASK >> BANK_SHIFT)) << 1)
 				/* Bank X Select */
 #define B0SEL		0xC0	/* Bank 0 Select */
 #define B1SEL		0xC2	/* Bank 1 Select */
@@ -408,9 +408,9 @@
 #define LED_B_SETTINGS		0x8
 
 /* maximum ethernet frame length
- * Currently not used as a limit anywhere
- * (we're using the "huge frame enable" feature of
- * enc424j600). */
+ * TODO: Is it OK to use the huge frame enable feature and still
+ * have limited frame length in all the other parts of the code?
+ */
 #define MAX_FRAMELEN		1518
 
 /* Size in bytes of the receive buffer in enc424j600.
@@ -427,5 +427,45 @@
 
 /* Start of the receive buffer */
 #define ERXST_VAL		(SRAM_SIZE - RX_BUFFER_SIZE)
+
+/* RSV Values */
+#define RSV_PREVIOUSLY_IGNORED	16
+#define RSV_CARRIER_EVENT	18
+#define RSV_CRC_ERROR		20
+#define RSV_LENGTH_CHECK_ERROR	21
+#define RSV_LENGTH_OUT_OF_RANGE	22
+#define RSV_RXOK		23
+#define RSV_MULTICAST		24
+#define RSV_BROADCAST		25
+#define RSV_DRIBBLE_NIBBLE	26
+#define RSV_CONTROL_FRAME	27
+#define RSV_PAUSE_CONTROL_FRAME	28
+#define RSV_UNKNOWN_OPCODE	29
+#define RSV_VLAN		30
+#define RSV_RUNT_FILTER		31
+#define RSV_NOT_ME_FILTER	32
+#define RSV_HASH_FILTER		33
+#define RSV_MAGIC_FILTER	34
+#define RSV_PATTERN_FILTER	35
+#define RSV_UNICAST_FILTER	36
+
+/* TODO
+#define RSV_RXLONGEVDROPEV      16
+#define RSV_CARRIEREV           18
+#define RSV_CRCERROR            20
+#define RSV_LENCHECKERR         21
+#define RSV_LENOUTOFRANGE       22
+#define RSV_RXOK                23
+#define RSV_RXMULTICAST         24
+#define RSV_RXBROADCAST         25
+#define RSV_DRIBBLENIBBLE       26
+#define RSV_RXCONTROLFRAME      27
+#define RSV_RXPAUSEFRAME        28
+#define RSV_RXUNKNOWNOPCODE     29
+#define RSV_RXTYPEVLAN          30*/
+
+#define RSV_SIZE                8
+#define RSV_BITMASK(x)          (1 << ((x) - 16))
+#define RSV_GETBIT(x, y)        (((x) & RSV_BITMASK(y)) ? 1 : 0)
 
 #endif
