@@ -166,6 +166,31 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 	priv->spi_tx_buf[0] = WGPDATA;
 	ret = enc424j600_spi_trans(priv, len + 1);
 
+#ifdef CONFIG_ENC28J60_WRITEVERIFY
+	if (netif_msg_drv(priv)) {
+		/* We're only checking the first few bytes. */
+		u8 verify_buffer[64];
+		int verify_len;
+		int k;
+		
+		if (len > sizeof(verify_buffer))
+			verify_len = sizeof(verify_buffer);
+		else
+			verify_len = len;
+		
+		enc424j600_read_sram(priv, verify_buffer, verify_len, dstaddr);
+
+		for (k = 0; k < verify_len; k++) {
+                        if (src[k] != verify_buffer[k]) {
+                                printk(KERN_DEBUG DRV_NAME
+                                         ": RAM write verify error, %d location "
+					 "differs: 0x%02x-0x%02x\n", k,
+                                         src[k], verify_buffer[k]);
+                        }
+                }
+	}
+#endif
+
 	return ret;
 }
 
@@ -189,25 +214,20 @@ static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
 }
 
 /*
- * Set bits in an 8bit SFR.
+ * Read a 8bit special function register.
+ * The @sfr parameters takes address of the register.
+ * Uses banked read instruction.
  */
-static void enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
+static int enc424j600_read_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 *data)
 {
-	enc424j600_set_bank(priv, addr);
-	priv->spi_tx_buf[0] = BFS(addr);
-	priv->spi_tx_buf[1] = mask;
-	enc424j600_spi_trans(priv, 2);
-}
+	int ret;
 
-/*
- * Clear bits in an 8bit SFR.
- */
-static void enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
-{
-	enc424j600_set_bank(priv, addr);
-	priv->spi_tx_buf[0] = BFC(addr);
-	priv->spi_tx_buf[1] = mask;
-	enc424j600_spi_trans(priv, 2);
+	enc424j600_set_bank(priv, sfr);
+	priv->spi_tx_buf[0] = RCR(sfr & ADDR_MASK);
+	ret = enc424j600_spi_trans(priv, 2);
+	*data = priv->spi_rx_buf[1];
+
+	return ret;
 }
 
 /*
@@ -225,21 +245,38 @@ static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
 	priv->spi_tx_buf[1] = data & 0xFF;
 	ret = enc424j600_spi_trans(priv, 2);
 
+#ifdef CONFIG_ENC28J60_WRITEVERIFY
+	if (netif_msg_drv(priv)) {
+		u8 val;
+
+		enc424j600_read_8b_sfr(priv, sfr, &val);
+
+		if (val != data)
+			printk(KERN_DEBUG DRV_NAME
+				 ": 8 bit sfr write verify error, values differ: "
+				 "0x%02x - 0x%02x\n", val, data);
+	}
+#endif
+
 	return ret;
 }
+
 /*
- * Read a 8bit special function register.
- * The @sfr parameters takes address of the register.
+ * Read a 16bit special function register.
+ * The @sfr parameters takes address of the low byte of the register.
+ * Takes care of the endiannes & buffers.
  * Uses banked read instruction.
  */
-static int enc424j600_read_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 *data)
+static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
 {
 	int ret;
 
 	enc424j600_set_bank(priv, sfr);
+
 	priv->spi_tx_buf[0] = RCR(sfr & ADDR_MASK);
-	ret = enc424j600_spi_trans(priv, 2);
-	*data = priv->spi_rx_buf[1];
+	ret = enc424j600_spi_trans(priv, 3);
+	*data = priv->spi_rx_buf[1] |
+		priv->spi_rx_buf[2] << (u16)8;
 
 	return ret;
 }
@@ -261,25 +298,74 @@ static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 dat
 	priv->spi_tx_buf[2] = data >> 8;
 	ret = enc424j600_spi_trans(priv, 3);
 
+#ifdef CONFIG_ENC28J60_WRITEVERIFY
+	if (netif_msg_drv(priv)) {
+		u16 val;
+
+		enc424j600_read_16b_sfr(priv, sfr, &val);
+
+		if (val != data)
+			printk(KERN_DEBUG DRV_NAME
+				 ": 8 bit sfr write verify error, values differ: "
+				 "0x%02x - 0x%02x\n", val, data);
+	}
+#endif
+
 	return ret;
 }
 
 /*
- * Read a 16bit special function register.
- * The @sfr parameters takes address of the low byte of the register.
- * Takes care of the endiannes & buffers.
- * Uses banked read instruction.
+ * Set bits in an 8bit SFR.
  */
-static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
+static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 {
 	int ret;
 
-	enc424j600_set_bank(priv, sfr);
+	enc424j600_set_bank(priv, addr);
+	priv->spi_tx_buf[0] = BFS(addr);
+	priv->spi_tx_buf[1] = mask;
+	ret = enc424j600_spi_trans(priv, 2);
 
-	priv->spi_tx_buf[0] = RCR(sfr & ADDR_MASK);
-	ret = enc424j600_spi_trans(priv, 3);
-	*data = priv->spi_rx_buf[1] |
-		priv->spi_rx_buf[2] << (u16)8;
+#ifdef CONFIG_ENC28J60_WRITEVERIFY
+	if (netif_msg_drv(priv)) {
+		u8 val;
+
+		enc424j600_read_8b_sfr(priv, addr, &val);
+
+		if (val & mask != mask)
+			printk(KERN_DEBUG DRV_NAME
+				 ": set_bits verify error, all bits are not set: "
+				 "0x%02x; mask: 0x%02x\n", val, mask);
+	}
+#endif
+	
+	return ret;
+}
+
+/*
+ * Clear bits in an 8bit SFR.
+ */
+static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
+{
+	int ret;
+
+	enc424j600_set_bank(priv, addr);
+	priv->spi_tx_buf[0] = BFC(addr);
+	priv->spi_tx_buf[1] = mask;
+	ret = enc424j600_spi_trans(priv, 2);
+
+#ifdef CONFIG_ENC28J60_WRITEVERIFY
+	if (netif_msg_drv(priv)) {
+		u8 val;
+
+		enc424j600_read_8b_sfr(priv, addr, &val);
+
+		if (val & mask != 0)
+			printk(KERN_DEBUG DRV_NAME
+				": set_bits verify error, all bits are not "
+				"cleared: 0x%02x; mask: 0x%02x\n", val, mask);
+	}
+#endif
 
 	return ret;
 }
@@ -898,16 +984,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	 * This frees the memory we just read out
 	 */
 	mutex_lock(&priv->lock);
-#if 0 && defined(CONFIG_ENC28J60_WRITEVERIFY)
-	if (netif_msg_drv(priv)) {
-		u16 reg;
-		reg = nolock_regw_read(priv, ERXRDPTL);
-		if (reg != erxrdpt)
-			printk(KERN_DEBUG DRV_NAME ": %s() ERXRDPT verify "
-				"error (0x%04x - 0x%04x)\n", __func__,
-				reg, erxrdpt);
-	}
-#endif
+
 	priv->next_pk_ptr = next_packet;
 
 	/* unprotect the area that was used by this packet. */
@@ -1182,40 +1259,8 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 	enc424j600_write_16b_sfr(priv, ETXSTL, SRAM_GP_START);
 
 	/* Write the transfer length */
-	enc424j600_write_16b_sfr(priv, ETXLENL,  priv->tx_skb->len);
+	enc424j600_write_16b_sfr(priv, ETXLENL, priv->tx_skb->len);
 	
-
-
-/* TODO: Writeverify */
-#if 0 && CONFIG_ENC28J60_WRITEVERIFY
-	/* readback and verify written data */
-	if (netif_msg_drv(priv)) {
-		int test_len, k;
-		u8 test_buf[64]; /* limit the test to the first 64 bytes */
-		int okflag;
-
-		test_len = priv->tx_skb->len;
-		if (test_len > sizeof(test_buf))
-			test_len = sizeof(test_buf);
-
-		/* + 1 to skip control byte */
-		enc424j600_mem_read(priv, TXSTART_INIT + 1, test_len, test_buf);
-		okflag = 1;
-		for (k = 0; k < test_len; k++) {
-			if (priv->tx_skb->data[k] != test_buf[k]) {
-				printk(KERN_DEBUG DRV_NAME
-					 ": Error, %d location differ: "
-					 "0x%02x-0x%02x\n", k,
-					 priv->tx_skb->data[k], test_buf[k]);
-				okflag = 0;
-			}
-		}
-		if (!okflag)
-			printk(KERN_DEBUG DRV_NAME ": Tx write buffer, "
-				"verify ERROR!\n");
-	}
-#endif
-
 	/* set TX request flag */
 	enc424j600_set_bits(priv, ECON1L, TXRTS);
 
@@ -1349,6 +1394,7 @@ static int enc424j600_net_close(struct net_device *dev)
  * num_addrs == -1	Promiscuous mode, receive all packets
  * num_addrs == 0	Normal mode, filter out multicast packets
  * num_addrs > 0	Multicast mode, receive normal and MC packets
+ * TODO: Write this
  */
 static void enc424j600_set_multicast_list(struct net_device *dev)
 {
@@ -1376,6 +1422,9 @@ static void enc424j600_set_multicast_list(struct net_device *dev)
 #endif
 }
 
+/*
+ * TODO: Write this
+ */
 static void enc424j600_setrx_work_handler(struct work_struct *work)
 {
 #if 0
