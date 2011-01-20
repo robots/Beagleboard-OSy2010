@@ -488,7 +488,6 @@ static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 da
 
 /*
  * Read the hardware MAC address to dev->dev_addr.
- * TODO: Check this
  */
 static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 {
@@ -498,11 +497,6 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 	u16 maadr3;
 
 	mutex_lock(&priv->lock);
-
-	if (netif_msg_drv(priv))
-		printk(KERN_INFO DRV_NAME
-			": %s: Setting MAC address to %pM\n",
-			ndev->name, ndev->dev_addr);
 
 	enc424j600_read_16b_sfr(priv, MAADR3L, &maadr3);
 	ndev->dev_addr[0] = maadr3 >> 8;
@@ -514,6 +508,11 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 	ndev->dev_addr[4] = maadr1 >> 8;
 	ndev->dev_addr[5] = maadr1 & 0xff;;
 
+	if (netif_msg_drv(priv))
+		printk(KERN_INFO DRV_NAME
+			": %s: Setting MAC is %pM\n",
+			ndev->name, ndev->dev_addr);
+
 	mutex_unlock(&priv->lock);
 
 	return 0;
@@ -521,7 +520,6 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 
 /*
  * Program the hardware MAC address from dev->dev_addr.
- * TODO: Check this
  */
 static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 {
@@ -555,7 +553,6 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 
 /*
  * Store the new hardware address in dev->dev_addr, and update the MAC.
- * TODO: Check this
  */
 static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
 {
@@ -859,34 +856,38 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 
 /*
  * Receive Status vector
- * TODO
  */
 static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
-			      u16 pk_ptr, int len, u16 sts)
+			      u16 pk_ptr, int len, u32 rxstat)
 {
-#if 0
 	printk(KERN_DEBUG DRV_NAME ": %s - NextPk: 0x%04x - RSV:\n",
 		msg, pk_ptr);
-	printk(KERN_DEBUG DRV_NAME ": ByteCount: %d, DribbleNibble: %d\n", len,
-		 RSV_GETBIT(sts, RSV_DRIBBLENIBBLE));
-	printk(KERN_DEBUG DRV_NAME ": RxOK: %d, CRCErr:%d, LenChkErr: %d,"
-		 " LenOutOfRange: %d\n", RSV_GETBIT(sts, RSV_RXOK),
-		 RSV_GETBIT(sts, RSV_CRCERROR),
-		 RSV_GETBIT(sts, RSV_LENCHECKERR),
-		 RSV_GETBIT(sts, RSV_LENOUTOFRANGE));
-	printk(KERN_DEBUG DRV_NAME ": Multicast: %d, Broadcast: %d, "
-		 "LongDropEvent: %d, CarrierEvent: %d\n",
-		 RSV_GETBIT(sts, RSV_RXMULTICAST),
-		 RSV_GETBIT(sts, RSV_RXBROADCAST),
-		 RSV_GETBIT(sts, RSV_RXLONGEVDROPEV),
-		 RSV_GETBIT(sts, RSV_CARRIEREV));
-	printk(KERN_DEBUG DRV_NAME ": ControlFrame: %d, PauseFrame: %d,"
-		 " UnknownOp: %d, VLanTagFrame: %d\n",
-		 RSV_GETBIT(sts, RSV_RXCONTROLFRAME),
-		 RSV_GETBIT(sts, RSV_RXPAUSEFRAME),
-		 RSV_GETBIT(sts, RSV_RXUNKNOWNOPCODE),
-		 RSV_GETBIT(sts, RSV_RXTYPEVLAN));
-#endif
+	printk(KERN_DEBUG DRV_NAME ": Byte count: %d\n", len);
+
+#define PRINT_RSV_BIT(value, desc) \
+	printk(KERN_DEBUG DRV_NAME ": " desc ": %d\n", RSV_GETBIT(rxstat, (value)))
+
+	PRINT_RSV_BIT(RSV_UNICAST_FILTER, "Unicast Filter Match");
+	PRINT_RSV_BIT(RSV_PATTERN_FILTER, "Pattern Match Filter Match");
+	PRINT_RSV_BIT(RSV_MAGIC_FILTER, "Magic Packet Filter Match");
+	PRINT_RSV_BIT(RSV_HASH_FILTER, "Hash Filter Match");
+	PRINT_RSV_BIT(RSV_NOT_ME_FILTER, "Not-Me Filter Match");
+	PRINT_RSV_BIT(RSV_RUNT_FILTER, "Runt Filter Match");
+	PRINT_RSV_BIT(RSV_VLAN, "Receive VLAN Type Detected");
+	PRINT_RSV_BIT(RSV_UNKNOWN_OPCODE, "Receive Unknown Opcode");
+	PRINT_RSV_BIT(RSV_PAUSE_CONTROL_FRAME, "Receive Pause Control Frame");
+	PRINT_RSV_BIT(RSV_CONTROL_FRAME, "Receive Control Frame");
+	PRINT_RSV_BIT(RSV_DRIBBLE_NIBBLE, "Dribble Nibble");
+	PRINT_RSV_BIT(RSV_BROADCAST, "Receive Broadcast Packet");
+	PRINT_RSV_BIT(RSV_MULTICAST, "Receive Multicast Packet");
+	PRINT_RSV_BIT(RSV_RXOK, "Received Ok");
+	PRINT_RSV_BIT(RSV_LENGTH_OUT_OF_RANGE, "Length Out of Range");
+	PRINT_RSV_BIT(RSV_LENGTH_CHECK_ERROR, "Length Check Error");
+	PRINT_RSV_BIT(RSV_CRC_ERROR, "CRC Error");
+	PRINT_RSV_BIT(RSV_CARRIER_EVENT, "Carrier Event Previously Seen");
+	PRINT_RSV_BIT(RSV_PREVIOUSLY_IGNORED, "Packet Previously Ignored");
+
+#undef PRINT_RSV_BIT
 }
 
 static void dump_packet(const char *msg, int len, const char *data)
