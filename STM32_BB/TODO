@@ -10,4 +10,4 @@ OK
 OK
 
 * SPI_Slave:
-OK
+have the callbacks called from ISR  - test needed

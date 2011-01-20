@@ -16,12 +16,13 @@ const uint16_t SYS_Identifier = 0xCAFE;
 volatile uint16_t SYS_Reset = 0x0000;
 
 void SYS_Init() {
-	GPIO_InitTypeDef GPIO_InitStructure;
-
 	// SPI Int as OD output
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
+	GPIO_InitTypeDef GPIO_InitStructure = {
+		.GPIO_Pin = GPIO_Pin_8,
+		.GPIO_Speed = GPIO_Speed_50MHz,
+		.GPIO_Mode = GPIO_Mode_Out_OD,
+	};
+
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	// leave the pin in Hi-Z
@@ -34,7 +35,10 @@ void SYS_Init() {
 
 void SYS_SetIntFlag(uint16_t in) {
 	SYS_InterruptFlag |= in;
-	if (SYS_InterruptEnable & in) {
+	if (SYS_InterruptEnable & SYS_InterruptFlag) {
+	// we need to check global flag
+	// otherwise we can loose interrupt
+	//if (SYS_InterruptEnable & in) {
 		SPI_INT_WRITE(Bit_RESET);
 		LED_YELLOW(Bit_RESET);
 	}
@@ -42,7 +46,10 @@ void SYS_SetIntFlag(uint16_t in) {
 
 void SYS_ClrIntFlag(uint16_t in) {
 	SYS_InterruptFlag &= ~in;
-	if ((SYS_InterruptEnable & in) == 0x0000) {
+	if ((SYS_InterruptEnable & SYS_InterruptFlag) == 0x0000) {
+	// we need to check global flag
+	// otherwise we can loose interrupt
+	//if ((SYS_InterruptEnable & in) == 0x0000) {
 		SPI_INT_WRITE(Bit_SET);
 		LED_YELLOW(Bit_SET);
 	}
@@ -52,6 +59,9 @@ void SYS_IntFlagWriteHandle(void) {
 	if ((SYS_InterruptFlag & SYS_InterruptEnable) == 0x0000) {
 		SPI_INT_WRITE(Bit_SET);
 		LED_YELLOW(Bit_SET);
+	} else if ((SYS_InterruptFlag & SYS_InterruptEnable)) {
+		SPI_INT_WRITE(Bit_RESET);
+		LED_YELLOW(Bit_RESET);
 	}
 }
 
@@ -62,6 +72,12 @@ void SYS_ResetHandler(void) {
 		return;
 
 	if (SYS_Reset == SYS_RESET_MAGIC) {
+		__disable_irq();
+
+		// clear all interrupts
+		SYS_ClrIntFlag(0xffff);
+
+		// reset magic (it should be done by C startup, but just to be sure
 		SYS_Reset = 0x0000;
 
 		// show the world we are down

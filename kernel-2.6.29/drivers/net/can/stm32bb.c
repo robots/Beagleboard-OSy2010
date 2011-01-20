@@ -667,8 +667,6 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 	while (!priv->force_quit && !freezing(current)) {
 		intf = stm32bb_read_reg(spi, SYS_INTF, 2);
-		/* clear interrupts*/
-		stm32bb_write_reg(spi, SYS_INTF, 0x0000, 2);
 
 		if (intf == 0x0000) {
 			/* only way to leave loop is to serve every interrupt !!! */

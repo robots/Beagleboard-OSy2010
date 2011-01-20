@@ -1,3 +1,18 @@
+# WinARM template makefile 
+# by Martin Thomas, Kaiserslautern, Germany 
+# <eversmith(at)heizung-thomas(dot)de>
+#
+# Released to the Public Domain
+# Please read the make user manual!
+#
+# The user-configuration is based on the WinAVR makefile-template
+# written by Eric B. Weddington, Jörg Wunsch, et al. but internal
+# handling used here is very different.
+# This makefile can also be used with the GNU tools included in
+# Yagarto, GNUARM or the codesourcery packages. It should work
+# on Unix/Linux-Systems too. Just a rather up-to-date GNU make is
+# needed.
+#
 TCHAIN_PREFIX = arm-softfloat-elf-
 
 
@@ -153,7 +168,7 @@ LINKERSCRIPTPATH = .
 # 0 = turn off optimization. s = optimize for size.
 # (Note: 3 is not always the best optimization level. See avr-libc FAQ.)
 #OPT = s
-OPT = 1
+OPT = 2
 #OPT = 3
 #OPT = 0
 
@@ -412,9 +427,8 @@ flash_load: $(OUTDIR)/$(TARGET).elf
 .PRECIOUS : $(ALLOBJ)
 %.elf:  $(ALLOBJ)
 	@echo
-	@echo $(MSG_LINKING) $@
+	@echo $(MSG_LINKING) $@ && $(CC) $(THUMB) $(CFLAGS) $(ALLOBJ) --output $@ $(LDFLAGS)
 # use $(CC) for C-only projects or $(CPP) for C++-projects:
-	$(CC) $(THUMB) $(CFLAGS) $(ALLOBJ) --output $@ $(LDFLAGS)
 #	$(CPP) $(THUMB) $(CFLAGS) $(ALLOBJ) --output $@ $(LDFLAGS)
 
 
@@ -422,8 +436,7 @@ flash_load: $(OUTDIR)/$(TARGET).elf
 define ASSEMBLE_TEMPLATE
 $(OUTDIR)/$(notdir $(basename $(1))).o : $(1)
 ##	@echo
-	@echo $(MSG_ASSEMBLING) $$< "->" $$@
-	$(CC) -c $(THUMB) $$(ASFLAGS) $$< -o $$@ 
+	@echo $(MSG_ASSEMBLING) $$< "->" $$@ && $(CC) -c $(THUMB) $$(ASFLAGS) $$< -o $$@ 
 endef
 $(foreach src, $(ASRC), $(eval $(call ASSEMBLE_TEMPLATE, $(src)))) 
 
@@ -431,8 +444,7 @@ $(foreach src, $(ASRC), $(eval $(call ASSEMBLE_TEMPLATE, $(src))))
 define ASSEMBLE_ARM_TEMPLATE
 $(OUTDIR)/$(notdir $(basename $(1))).o : $(1)
 ##	@echo
-	@echo $(MSG_ASSEMBLING_ARM) $$< "->" $$@
-	$(CC) -c $$(ASFLAGS) $$< -o $$@ 
+	@echo $(MSG_ASSEMBLING_ARM) $$< "->" $$@ && $(CC) -c $$(ASFLAGS) $$< -o $$@ 
 endef
 $(foreach src, $(ASRCARM), $(eval $(call ASSEMBLE_ARM_TEMPLATE, $(src)))) 
 
@@ -441,8 +453,7 @@ $(foreach src, $(ASRCARM), $(eval $(call ASSEMBLE_ARM_TEMPLATE, $(src))))
 define COMPILE_C_TEMPLATE
 $(OUTDIR)/$(notdir $(basename $(1))).o : $(1)
 ##	@echo
-	@echo $(MSG_COMPILING) $$< "->" $$@
-	$(CC) -c $(THUMB) $$(CFLAGS) $$(CONLYFLAGS) $$< -o $$@ 
+	@echo $(MSG_COMPILING) $$< "->" $$@ && $(CC) -c $(THUMB) $$(CFLAGS) $$(CONLYFLAGS) $$< -o $$@ 
 endef
 $(foreach src, $(SRC), $(eval $(call COMPILE_C_TEMPLATE, $(src)))) 
 
@@ -450,8 +461,7 @@ $(foreach src, $(SRC), $(eval $(call COMPILE_C_TEMPLATE, $(src))))
 define COMPILE_C_ARM_TEMPLATE
 $(OUTDIR)/$(notdir $(basename $(1))).o : $(1)
 ##	@echo
-	@echo $(MSG_COMPILING_ARM) $$< "->" $$@
-	$(CC) -c $$(CFLAGS) $$(CONLYFLAGS) $$< -o $$@ 
+	@echo $(MSG_COMPILING_ARM) $$< "->" $$@ && $(CC) -c $$(CFLAGS) $$(CONLYFLAGS) $$< -o $$@ 
 endef
 $(foreach src, $(SRCARM), $(eval $(call COMPILE_C_ARM_TEMPLATE, $(src)))) 
 
@@ -460,8 +470,7 @@ $(foreach src, $(SRCARM), $(eval $(call COMPILE_C_ARM_TEMPLATE, $(src))))
 define COMPILE_CPP_TEMPLATE
 $(OUTDIR)/$(notdir $(basename $(1))).o : $(1)
 ##	@echo
-	@echo $(MSG_COMPILINGCPP) $$< "->" $$@
-	$(CC) -c $(THUMB) $$(CFLAGS) $$(CPPFLAGS) $$< -o $$@ 
+	@echo $(MSG_COMPILINGCPP) $$< "->" $$@ && $(CC) -c $(THUMB) $$(CFLAGS) $$(CPPFLAGS) $$< -o $$@ 
 endef
 $(foreach src, $(CPPSRC), $(eval $(call COMPILE_CPP_TEMPLATE, $(src)))) 
 
@@ -469,21 +478,18 @@ $(foreach src, $(CPPSRC), $(eval $(call COMPILE_CPP_TEMPLATE, $(src))))
 define COMPILE_CPP_ARM_TEMPLATE
 $(OUTDIR)/$(notdir $(basename $(1))).o : $(1)
 ##	@echo
-	@echo $(MSG_COMPILINGCPP_ARM) $$< "->" $$@
-	$(CC) -c $$(CFLAGS) $$(CPPFLAGS) $$< -o $$@ 
+	@echo $(MSG_COMPILINGCPP_ARM) $$< "->" $$@ &&	$(CC) -c $$(CFLAGS) $$(CPPFLAGS) $$< -o $$@ 
 endef
 $(foreach src, $(CPPSRCARM), $(eval $(call COMPILE_CPP_ARM_TEMPLATE, $(src)))) 
 
 
 # Compile: create assembler files from C source files. ARM/Thumb
 $(SRC:.c=.s) : %.s : %.c
-	@echo $(MSG_ASMFROMC) $< to $@
-	$(CC) $(THUMB) -S $(CFLAGS) $(CONLYFLAGS) $< -o $@
+	@echo $(MSG_ASMFROMC) $< to $@ &&	$(CC) $(THUMB) -S $(CFLAGS) $(CONLYFLAGS) $< -o $@
 
 # Compile: create assembler files from C source files. ARM only
 $(SRCARM:.c=.s) : %.s : %.c
-	@echo $(MSG_ASMFROMC_ARM) $< to $@
-	$(CC) -S $(CFLAGS) $(CONLYFLAGS) $< -o $@
+	@echo $(MSG_ASMFROMC_ARM) $< to $@ && $(CC) -S $(CFLAGS) $(CONLYFLAGS) $< -o $@
 
 # Target: clean project.
 clean: begin clean_list finished end
