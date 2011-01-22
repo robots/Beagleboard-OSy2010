@@ -487,6 +487,30 @@ static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 da
 }
 
 /*
+ * Set the filters in the chip according to priv->rxfilter .
+ */
+static void enc424j600_set_hw_filters(struct enc424j600_net *priv)
+{
+	u8 erxfconl = CRCEN | RUNTEN | UCEN | BCEN;
+
+	if (priv->rxfilter == RXFILTER_PROMISC) {
+		if (netif_msg_drv(priv))
+			printk(KERN_DEBUG DRV_NAME ": promiscuous mode\n");
+		erxfconl |= NOTMEEN | MCEN;
+	} else if (priv->rxfilter == RXFILTER_MULTI) {
+		if (netif_msg_drv(priv))
+			printk(KERN_DEBUG DRV_NAME ": multicast mode\n");
+		erxfconl |= MCEN;
+	} else {
+		if (netif_msg_drv(priv))
+			printk(KERN_DEBUG DRV_NAME ": normal mode\n");
+	}
+
+	enc424j600_write_8b_sfr(priv, ERXFCONL, erxfconl);
+}
+
+
+/*
  * Read the hardware MAC address to dev->dev_addr.
  */
 static int enc424j600_get_hw_macaddr(struct net_device *ndev)
@@ -715,9 +739,8 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* Prepare the receive buffer */
 	enc424j600_prepare_rx_buffer(priv);
 
-	/* default filter mode: (unicast OR broadcast) AND crc valid */
-	enc424j600_write_16b_sfr(priv, ERXFCONL, UCEN | BCEN | CRCEN);
-		
+	enc424j600_set_hw_filters(priv);
+	
 	/* PHANA */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
 	
@@ -1392,14 +1415,9 @@ static int enc424j600_net_close(struct net_device *dev)
 
 /*
  * Set or clear the multicast filter for this adapter
- * num_addrs == -1	Promiscuous mode, receive all packets
- * num_addrs == 0	Normal mode, filter out multicast packets
- * num_addrs > 0	Multicast mode, receive normal and MC packets
- * TODO: Write this
  */
 static void enc424j600_set_multicast_list(struct net_device *dev)
 {
-#if 0
 	struct enc424j600_net *priv = netdev_priv(dev);
 	int oldfilter = priv->rxfilter;
 
@@ -1420,36 +1438,14 @@ static void enc424j600_set_multicast_list(struct net_device *dev)
 
 	if (oldfilter != priv->rxfilter)
 		schedule_work(&priv->setrx_work);
-#endif
 }
 
-/*
- * TODO: Write this
- */
 static void enc424j600_setrx_work_handler(struct work_struct *work)
 {
-#if 0
 	struct enc424j600_net *priv =
 		container_of(work, struct enc424j600_net, setrx_work);
 
-	if (priv->rxfilter == RXFILTER_PROMISC) {
-		if (netif_msg_drv(priv))
-			printk(KERN_DEBUG DRV_NAME ": promiscuous mode\n");
-		locked_regb_write(priv, ERXFCON, 0x00);
-	} else if (priv->rxfilter == RXFILTER_MULTI) {
-		if (netif_msg_drv(priv))
-			printk(KERN_DEBUG DRV_NAME ": multicast mode\n");
-		locked_regb_write(priv, ERXFCON,
-					ERXFCON_UCEN | ERXFCON_CRCEN |
-					ERXFCON_BCEN | ERXFCON_MCEN);
-	} else {
-		if (netif_msg_drv(priv))
-			printk(KERN_DEBUG DRV_NAME ": normal mode\n");
-		locked_regb_write(priv, ERXFCON,
-					ERXFCON_UCEN | ERXFCON_CRCEN |
-					ERXFCON_BCEN);
-	}
-#endif
+	enc424j600_set_hw_filters(priv);
 }
 
 static void enc424j600_restart_work_handler(struct work_struct *work)
@@ -1530,10 +1526,12 @@ static const struct ethtool_ops enc424j600_ethtool_ops = {
 static int enc424j600_chipset_init(struct net_device *dev)
 {
 	struct enc424j600_net *priv = netdev_priv(dev);
+	int ret;
 
-	return enc424j600_hw_init(priv);
+	ret = enc424j600_hw_init(priv);
 	enc424j600_get_hw_macaddr(dev);
 
+	return ret;
 }
 
 static const struct net_device_ops enc424j600_netdev_ops = {
