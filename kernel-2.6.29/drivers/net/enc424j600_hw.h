@@ -449,21 +449,6 @@
 #define RSV_PATTERN_FILTER	35
 #define RSV_UNICAST_FILTER	36
 
-/* TODO
-#define RSV_RXLONGEVDROPEV      16
-#define RSV_CARRIEREV           18
-#define RSV_CRCERROR            20
-#define RSV_LENCHECKERR         21
-#define RSV_LENOUTOFRANGE       22
-#define RSV_RXOK                23
-#define RSV_RXMULTICAST         24
-#define RSV_RXBROADCAST         25
-#define RSV_DRIBBLENIBBLE       26
-#define RSV_RXCONTROLFRAME      27
-#define RSV_RXPAUSEFRAME        28
-#define RSV_RXUNKNOWNOPCODE     29
-#define RSV_RXTYPEVLAN          30*/
-
 #define RSV_SIZE                8
 #define RSV_BITMASK(x)          (1 << ((x) - 16))
 #define RSV_GETBIT(x, y)        (((x) & RSV_BITMASK(y)) ? 1 : 0)
