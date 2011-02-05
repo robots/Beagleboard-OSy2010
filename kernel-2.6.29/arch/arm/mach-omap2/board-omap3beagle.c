@@ -346,6 +346,7 @@ static struct spi_board_info beagle_spi_board_info[] = {
 	{
 		.modalias	= "enc424j600",
 		.chip_select	= 0,
+		.irq		= OMAP_GPIO_IRQ(141),
 		.max_speed_hz	= 14*1000*1000,
 		.bus_num	= 4,
 		.mode = SPI_MODE_0 | SPI_CS_HIGH,
@@ -567,7 +568,7 @@ static void __init omap3_beagle_init(void)
 	 * once the drivers are ready
 	 */
 	gpio_request(141, "enc424j600_irq");
-	gpio_direction_input(157);
+	gpio_direction_input(141);
 
 	spi_register_board_info(beagle_spi_board_info, 
 				ARRAY_SIZE(beagle_spi_board_info));
