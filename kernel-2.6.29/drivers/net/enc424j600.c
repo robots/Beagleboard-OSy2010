@@ -10,7 +10,7 @@
  * (at your option) any later version.
  *
  */
-
+#define DEBUG 1
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -1221,34 +1221,42 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 
 	do {
 		u16 intflags;
+		u8 inth;
+		u8 intl;
 
 		enc424j600_read_16b_sfr(priv, EIRL, &intflags);
-		loop = 0;
+		loop = 0; /* FIXME: AAAAAAAAAAAA, add unused flags info */
+
+		inth = intflags >> 8;
+		intl = intflags & 0xff;
 
 		/* LINK changed handler */
-		if ((intflags & LINKIF) != 0) {
+		if ((inth & LINKIF) != 0) {
 			loop = enc424j600_int_link_handler(priv, loop);
 		}
+
 		/* TX complete handler */
-		if ((intflags & TXIF) != 0) {
+		if ((intl & TXIF) != 0) {
 			loop = enc424j600_int_tx_handler(priv, loop);
 		}
 
 		/* TX Error handler */
-		if ((intflags & TXABTIF) != 0) {
+		if ((intl & TXABTIF) != 0) {
 			loop = enc424j600_int_tx_err_handler(priv, loop);
 		}
+
 		/* RX Error handler */
-		if ((intflags & RXABTIF) != 0) {
+		if ((intl & RXABTIF) != 0) {
 			loop = enc424j600_int_rx_abbort_handler(priv, loop);
 		}
+
 		/* RX handler */
-		if ((intflags & PKTIF) != 0) {
+		if ((intl & PKTIF) != 0) {
 			loop += enc424j600_int_received_packet_handler(priv);
 		}
 
-		enc424j600_clear_bits(priv, EIRL, intflags && 0xff);
-		enc424j600_clear_bits(priv, EIRH, intflags >> 8);
+		enc424j600_clear_bits(priv, EIRL, intl);
+		enc424j600_clear_bits(priv, EIRH, inth);
 	} while (loop);
 
 	/* re-enable interrupts */
@@ -1628,7 +1636,7 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 	/* Board setup must set the relevant edge trigger type;
 	 * level triggers won't currently work.
 	 */
-	ret = request_irq(spi->irq, enc424j600_irq, 0, DRV_NAME, priv);
+	ret = request_irq(spi->irq, enc424j600_irq, IRQF_TRIGGER_FALLING, DRV_NAME, priv);
 	if (ret < 0) {
 		if (netif_msg_probe(priv))
 			dev_err(&spi->dev, DRV_NAME ": request irq %d failed "
