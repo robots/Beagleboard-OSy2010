@@ -213,7 +213,7 @@ const omap3_sysinfo sysinfo = {
  MUX_VAL(CP(MMC2_DAT7),		(IEN  | PTU | EN  | M4)) /*MD - GPIO_139*/\
  /*Bluetooth*/\
  MUX_VAL(CP(MCBSP3_DX),		(IDIS | PTD | DIS | M4)) /*MD - GPIO_140*/\
- MUX_VAL(CP(MCBSP3_DR),		(IDIS | PTD | DIS | M4)) /*MD - GPIO_141*/\
+ MUX_VAL(CP(MCBSP3_DR),		(IEN  | PTD | DIS | M4)) /*MD - GPIO_141*/\
  MUX_VAL(CP(MCBSP3_CLKX),	(IDIS | PTD | DIS | M1)) /*UART2_TX*/\
  MUX_VAL(CP(MCBSP3_FSX),	(IEN  | PTD | DIS | M1)) /*UART2_RX*/\
  MUX_VAL(CP(UART2_CTS),		(IEN  | PTD | DIS | M4)) /*GPIO_144*/\
