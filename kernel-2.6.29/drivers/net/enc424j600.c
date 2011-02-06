@@ -1105,56 +1105,45 @@ static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
 	netif_wake_queue(ndev);
 }
 
-static int enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv, int loop)
+static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
 {
-	loop++;
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
-			": intRXAbt(%d)\n", loop);
+			": intRXAbt\n");
 	mutex_lock(&priv->lock);
 	priv->netdev->stats.rx_dropped++;
 	mutex_unlock(&priv->lock);
-
-	return loop;
 }
 
-static int enc424j600_int_link_handler(struct enc424j600_net *priv, int loop)
+static void enc424j600_int_link_handler(struct enc424j600_net *priv)
 {
-	loop++;
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
-			": intLINK(%d)\n", loop);
+			": intLINK\n");
 
 	/* we check more than is necessary here --
 	 * only PHYLNK would be needed. */
 	enc424j600_check_link_status(priv);
-
-	return loop;
 }
 
-static int enc424j600_int_tx_handler(struct enc424j600_net *priv, int loop)
+static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
 {
-	loop++;
-
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
-			": intTX(%d)\n", loop);
+			": intTX\n");
 	
 	mutex_lock(&priv->lock);
 	enc424j600_tx_clear(priv, false);
 	mutex_unlock(&priv->lock);
-
-	return loop;
 }
 
-static int enc424j600_int_tx_err_handler(struct enc424j600_net *priv, int loop)
+static void enc424j600_int_tx_err_handler(struct enc424j600_net *priv)
 {
 	u16 etxstat;
 	
-	loop++;
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
-			": intTXErr(%d)\n", loop);
+			": intTXErr\n");
 
 	mutex_lock(&priv->lock);
 
@@ -1179,8 +1168,6 @@ static int enc424j600_int_tx_err_handler(struct enc424j600_net *priv, int loop)
 	}
 
 	mutex_unlock(&priv->lock);
-
-	return loop;
 }
 
 static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
@@ -1211,7 +1198,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 {
 	struct enc424j600_net *priv =
 		container_of(work, struct enc424j600_net, irq_work);
-	int loop;
+	u16 eir;
 
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
@@ -1220,44 +1207,50 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 	enc424j600_clear_bits(priv, EIEH, INTIE);
 
 	do {
-		u16 intflags;
-		u8 inth;
-		u8 intl;
+		u8 eirh;
+		u8 eirl;
 
-		enc424j600_read_16b_sfr(priv, EIRL, &intflags);
-		loop = 0; /* FIXME: AAAAAAAAAAAA, add unused flags info */
+		enc424j600_read_16b_sfr(priv, EIRL, &eir);
+		/* TODO: Possible race condition here! Is it even possible to avoid this? */
+		eirh = eir >> 8;
+		eirl = eir & 0xff;
+		enc424j600_clear_bits(priv, EIRL, eirl);
+		enc424j600_clear_bits(priv, EIRH, eirh);
 
-		inth = intflags >> 8;
-		intl = intflags & 0xff;
 
-		/* LINK changed handler */
-		if ((inth & LINKIF) != 0) {
-			loop = enc424j600_int_link_handler(priv, loop);
+		/* Unused interrupts:
+		 * 	Modular exponentiation complete
+		 * 	Hash complete
+		 * 	AES complete
+		 * 	DMA complete
+		 * 	Receive packet counter full
+		 */
+
+		/* link changed handler */
+		if ((eirh & LINKIF) != 0) {
+			enc424j600_int_link_handler(priv);
 		}
 
 		/* TX complete handler */
-		if ((intl & TXIF) != 0) {
-			loop = enc424j600_int_tx_handler(priv, loop);
+		if ((eirl & TXIF) != 0) {
+			enc424j600_int_tx_handler(priv);
 		}
 
 		/* TX Error handler */
-		if ((intl & TXABTIF) != 0) {
-			loop = enc424j600_int_tx_err_handler(priv, loop);
+		if ((eirl & TXABTIF) != 0) {
+			enc424j600_int_tx_err_handler(priv);
 		}
 
 		/* RX Error handler */
-		if ((intl & RXABTIF) != 0) {
-			loop = enc424j600_int_rx_abbort_handler(priv, loop);
+		if ((eirl & RXABTIF) != 0) {
+			enc424j600_int_rx_abbort_handler(priv);
 		}
 
 		/* RX handler */
-		if ((intl & PKTIF) != 0) {
-			loop += enc424j600_int_received_packet_handler(priv);
+		if ((eirl & PKTIF) != 0) {
+			enc424j600_int_received_packet_handler(priv);
 		}
-
-		enc424j600_clear_bits(priv, EIRL, intl);
-		enc424j600_clear_bits(priv, EIRH, inth);
-	} while (loop);
+	} while (eir);
 
 	/* re-enable interrupts */
 	enc424j600_set_bits(priv, EIEH, INTIE);
