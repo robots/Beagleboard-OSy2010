@@ -82,6 +82,8 @@ static struct {
 	u32 msg_enable;
 } debug = { -1 };
 
+static void enc424j600_check_link_status(struct enc424j600_net *priv);
+
 static int enc424j600_spi_trans(struct enc424j600_net *priv, int len)
 {
 	struct spi_transfer t = {
@@ -705,10 +707,6 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	u16 phcon1;
 	u16 macon2;
 
-	if (netif_msg_drv(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() - %s\n", __func__,
-			priv->autoneg ? "Autoneg" : (priv->full_duplex ? "FullDuplex" : "HalfDuplex"));
-
 	mutex_lock(&priv->lock);
 
 	priv->bank = 0;
@@ -716,6 +714,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	priv->tx_retry_count = 0;
 	priv->max_pk_counter = 0;
 	priv->rxfilter = RXFILTER_NORMAL;
+	priv->autoneg = 1;
 
 	enc424j600_soft_reset(priv);
 
@@ -746,7 +745,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	
 	/* PHCON1 */
 	phcon1 = 0;
-	if (priv->autoneg){
+	if (priv->autoneg) {
 		/* Enable autonegotiation and renegotiate */
 		phcon1 |= ANEN | RENEG;
 	} else {
@@ -757,6 +756,8 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	}
 	enc424j600_phy_write(priv, PHCON1, phcon1);
 
+	/* jedno tluste TODO */
+	enc424j600_check_link_status(priv);
 
 	// TODO: First PHY, then MAC ?
 
@@ -1075,9 +1076,9 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 				enc424j600_write_16b_sfr(
 					priv, MACON2L, macon2);
 				
-				priv->duplex = true;
+				priv->full_duplex = true;
 			} else {
-				priv->duplex = false;
+				priv->full_duplex = false;
 			}
 
 			enc424j600_phy_read(priv, PHCON1, &phcon1);
@@ -1499,6 +1500,12 @@ enc424j600_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 			| SUPPORTED_100baseT_Full
 			| SUPPORTED_Autoneg
 			| SUPPORTED_TP;
+	cmd->advertising = ADVERTISED_10baseT_Half
+			| ADVERTISED_10baseT_Full
+			| ADVERTISED_100baseT_Half
+			| ADVERTISED_100baseT_Full
+			| ADVERTISED_Autoneg
+			| ADVERTISED_TP;
 	cmd->speed	= priv->speed100 ? SPEED_100 : SPEED_10;
 	cmd->duplex	= priv->full_duplex ? DUPLEX_FULL : DUPLEX_HALF;
 	cmd->port	= PORT_TP;
