@@ -168,7 +168,7 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 	priv->spi_tx_buf[0] = WGPDATA;
 	ret = enc424j600_spi_trans(priv, len + 1);
 
-#ifdef CONFIG_ENC28J60_WRITEVERIFY
+#ifdef CONFIG_ENC424J600_WRITEVERIFY
 	if (netif_msg_drv(priv)) {
 		/* We're only checking the first few bytes. */
 		u8 verify_buffer[64];
@@ -247,7 +247,7 @@ static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
 	priv->spi_tx_buf[1] = data & 0xFF;
 	ret = enc424j600_spi_trans(priv, 2);
 
-#ifdef CONFIG_ENC28J60_WRITEVERIFY
+#ifdef CONFIG_ENC424J600_WRITEVERIFY
 	if (netif_msg_drv(priv)) {
 		u8 val;
 
@@ -300,7 +300,7 @@ static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 dat
 	priv->spi_tx_buf[2] = data >> 8;
 	ret = enc424j600_spi_trans(priv, 3);
 
-#ifdef CONFIG_ENC28J60_WRITEVERIFY
+#ifdef CONFIG_ENC424J600_WRITEVERIFY
 	if (netif_msg_drv(priv)) {
 		u16 val;
 
@@ -328,13 +328,13 @@ static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 	priv->spi_tx_buf[1] = mask;
 	ret = enc424j600_spi_trans(priv, 2);
 
-#ifdef CONFIG_ENC28J60_WRITEVERIFY
+#ifdef CONFIG_ENC424J600_WRITEVERIFY
 	if (netif_msg_drv(priv)) {
 		u8 val;
 
 		enc424j600_read_8b_sfr(priv, addr, &val);
 
-		if (val & mask != mask)
+		if ((val & mask) != mask)
 			printk(KERN_DEBUG DRV_NAME
 				 ": set_bits verify error, all bits are not set: "
 				 "0x%02x; mask: 0x%02x\n", val, mask);
@@ -356,13 +356,13 @@ static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 	priv->spi_tx_buf[1] = mask;
 	ret = enc424j600_spi_trans(priv, 2);
 
-#ifdef CONFIG_ENC28J60_WRITEVERIFY
+#ifdef CONFIG_ENC424J600_WRITEVERIFY
 	if (netif_msg_drv(priv)) {
 		u8 val;
 
 		enc424j600_read_8b_sfr(priv, addr, &val);
 
-		if (val & mask != 0)
+		if ((val & mask) != 0)
 			printk(KERN_DEBUG DRV_NAME
 				": set_bits verify error, all bits are not "
 				"cleared: 0x%02x; mask: 0x%02x\n", val, mask);
