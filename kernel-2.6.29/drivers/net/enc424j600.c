@@ -1061,6 +1061,7 @@ static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
 static void enc424j600_check_link_status(struct enc424j600_net *priv)
 {
 	u8 estath;
+	u16 phcon1;
 
 	enc424j600_read_8b_sfr(priv, ESTATH, &estath);
 	if (estath & PHYLNK) {
@@ -1073,8 +1074,15 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 				macon2 |= FULDPX;
 				enc424j600_write_16b_sfr(
 					priv, MACON2L, macon2);
+				
+				priv->duplex = true;
+			} else {
+				priv->duplex = false;
 			}
 
+			enc424j600_phy_read(priv, PHCON1, &phcon1);
+			priv->speed100 = (phcon1 & SPD100) != 0;
+			
 		}
 		netif_carrier_on(priv->netdev);
 		if (netif_msg_ifup(priv))
