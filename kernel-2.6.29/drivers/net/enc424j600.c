@@ -1489,6 +1489,7 @@ enc424j600_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 			| SUPPORTED_10baseT_Full
 			| SUPPORTED_100baseT_Half
 			| SUPPORTED_100baseT_Full
+			| SUPPORTED_Autoneg
 			| SUPPORTED_TP;
 	cmd->speed	= priv->speed100 ? SPEED_100 : SPEED_10;
 	cmd->duplex	= priv->full_duplex ? DUPLEX_FULL : DUPLEX_HALF;
