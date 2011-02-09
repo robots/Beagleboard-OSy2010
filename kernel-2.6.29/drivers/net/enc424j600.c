@@ -522,15 +522,15 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 
 	mutex_lock(&priv->lock);
 
-	enc424j600_read_16b_sfr(priv, MAADR3L, &maadr3);
-	ndev->dev_addr[0] = maadr3 >> 8;
-	ndev->dev_addr[1] = maadr3 & 0xff;;
-	enc424j600_read_16b_sfr(priv, MAADR2L, &maadr2);
-	ndev->dev_addr[2] = maadr2 >> 8;
-	ndev->dev_addr[3] = maadr2 & 0xff;;
 	enc424j600_read_16b_sfr(priv, MAADR1L, &maadr1);
-	ndev->dev_addr[4] = maadr1 >> 8;
-	ndev->dev_addr[5] = maadr1 & 0xff;;
+	ndev->dev_addr[0] = maadr1 & 0xff;;
+	ndev->dev_addr[1] = maadr1 >> 8;
+	enc424j600_read_16b_sfr(priv, MAADR2L, &maadr2);
+	ndev->dev_addr[2] = maadr2 & 0xff;;
+	ndev->dev_addr[3] = maadr2 >> 8;
+	enc424j600_read_16b_sfr(priv, MAADR3L, &maadr3);
+	ndev->dev_addr[4] = maadr3 & 0xff;;
+	ndev->dev_addr[5] = maadr3 >> 8;
 
 	if (netif_msg_drv(priv))
 		printk(KERN_INFO DRV_NAME
@@ -566,9 +566,9 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 			": %s: Setting MAC address to %pM\n",
 			ndev->name, ndev->dev_addr);
 
-	enc424j600_write_16b_sfr(priv, MAADR3L, ndev->dev_addr[1] | ndev->dev_addr[0] << 8);
-	enc424j600_write_16b_sfr(priv, MAADR2L, ndev->dev_addr[3] | ndev->dev_addr[2] << 8);
-	enc424j600_write_16b_sfr(priv, MAADR1L, ndev->dev_addr[5] | ndev->dev_addr[4] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR1L, ndev->dev_addr[0] | ndev->dev_addr[1] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR2L, ndev->dev_addr[2] | ndev->dev_addr[3] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR3L, ndev->dev_addr[4] | ndev->dev_addr[5] << 8);
 
 	mutex_unlock(&priv->lock);
 
