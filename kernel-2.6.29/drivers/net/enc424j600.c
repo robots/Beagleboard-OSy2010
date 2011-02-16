@@ -478,10 +478,22 @@ static int enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *da
 
 static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 {
+	int ret;
 	enc424j600_write_16b_sfr(priv, MIREGADRL, address | (MIREGADRH_VAL << 8));
 	enc424j600_write_16b_sfr(priv, MIWRL, data);
 	udelay(26);
-	return !poll_ready(priv, MISTATL, BUSY, 0);
+	ret = !poll_ready(priv, MISTATL, BUSY, 0);
+
+#ifdef CONFIG_ENC424J600_WRITEVERIFY
+	if (netif_msg_drv(priv)) {
+		u16 verify_data;
+		enc424j600_phy_read(priv, address, &verify_data);
+
+		if (verify_data != data)
+			printk(KERN_DEBUG DRV_NAME ": PHY write error.\n");
+	}
+#endif
+	return ret;
 }
 
 /*
