@@ -726,37 +726,19 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	}
 	enc424j600_phy_write(priv, PHCON1, phcon1);
 
-	/* jedno tluste TODO */
-	enc424j600_check_link_status(priv);
-
 	/* MACON2
 	 * defer transmission if collision occurs (only for half duplex)
 	 * pad to 60 or 64 bytes and append CRC
 	 * enable receiving huge frames (instead of limiting packet size) */
 	macon2 = MACON2_DEFER | PADCFG2 | PADCFG0 | TXCRCEN | HFRMEN;
 
-	/* If autonegotiation is enabled, we have to wait untill it finishes
-	 * and set the PHYDPX bit in MACON2 correctly */
-	if (priv->autoneg) {
-		u8 estath;
-		enc424j600_wait_for_autoneg(priv);
-
-		/* read the PHYDPX bit in ESTAT and set FULDPX in MACON2 accordingly */
-		enc424j600_read_8b_sfr(priv, ESTATH, &estath);
-		if (estath & PHYDPX) {
-			macon2 |= FULDPX;
-		}
-	} else if (priv->full_duplex) {
-		macon2 |= FULDPX;
-	}
-	enc424j600_write_16b_sfr(priv, MACON2L, macon2);
+	enc424j600_check_link_status(priv);
 
 	/* MAIPGL
 	 * Recomended values for inter packet gaps */
 	if (!priv->autoneg) {
 		enc424j600_write_16b_sfr(priv, MAIPGL, MAIPGL_VAL | MAIPGH_VAL << 8);
 	}
-
 
 	/* LED settings */
 	enc424j600_write_8b_sfr(priv, EIDLEDH,
@@ -999,11 +981,9 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 			enc424j600_wait_for_autoneg(priv);
 			if (estath & PHYDPX) {
 				u16 macon2;
-				enc424j600_read_16b_sfr(
-					priv, MACON2L, &macon2);
+				enc424j600_read_16b_sfr(priv, MACON2L, &macon2);
 				macon2 |= FULDPX;
-				enc424j600_write_16b_sfr(
-					priv, MACON2L, macon2);
+				enc424j600_write_16b_sfr(priv, MACON2L, macon2);
 				
 				priv->full_duplex = true;
 			} else {
