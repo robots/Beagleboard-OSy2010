@@ -10,7 +10,6 @@
  * (at your option) any later version.
  *
  */
-#define DEBUG 1
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -39,7 +38,6 @@
 #define SPI_TRANSFER_BUF_LEN	(4 + MAX_FRAMELEN)
 #define TX_TIMEOUT	(4 * HZ)
 
-/* Max TX retries in case of collision as suggested by errata datasheet */
 #define MAX_TX_RETRYCOUNT	16
 
 static int enc424j600_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
@@ -131,7 +129,6 @@ static int enc424j600_read_sram(struct enc424j600_net *priv,
 	enc424j600_spi_trans(priv, 3);
 
 	/* Transfer the data */
-	/* TODO: Does this work? */
 	priv->spi_tx_buf[0] = RGPDATA;
 	ret = enc424j600_spi_trans(priv, len + 1);
 
@@ -164,7 +161,6 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 	memcpy(&priv->spi_tx_buf[1], src, len);
 
 	/* Transfer the data */
-	/* TODO: Does this work? */
 	priv->spi_tx_buf[0] = WGPDATA;
 	ret = enc424j600_spi_trans(priv, len + 1);
 
@@ -206,7 +202,7 @@ static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
 	/* These registers are present in all banks, no need to switch bank */
 	if (addr >= EUDASTL && addr <= ECON1H)
 		return;
-	if(priv->bank == b)
+	if (priv->bank == b)
 		return;
 
 	priv->spi_tx_buf[0] = BXSEL(b);
@@ -594,44 +590,6 @@ static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
 }
 
 /*
- * Debug routine to dump useful register contents
- * TODO
- */
-static void enc424j600_dump_regs(struct enc424j600_net *priv, const char *msg)
-{
-#if 0
-	mutex_lock(&priv->lock);
-	printk(KERN_DEBUG DRV_NAME " %s\n"
-		"HwRevID: 0x%02x\n"
-		"Cntrl: ECON1 ECON2 ESTAT  EIR  EIE\n"
-		"       0x%02x  0x%02x  0x%02x  0x%02x  0x%02x\n"
-		"MAC  : MACON1 MACON3 MACON4\n"
-		"       0x%02x   0x%02x   0x%02x\n"
-		"Rx   : ERXST  ERXND  ERXWRPT ERXRDPT ERXFCON EPKTCNT MAMXFL\n"
-		"       0x%04x 0x%04x 0x%04x  0x%04x  "
-		"0x%02x    0x%02x    0x%04x\n"
-		"Tx   : ETXST  ETXND  MACLCON1 MACLCON2 MAPHSUP\n"
-		"       0x%04x 0x%04x 0x%02x     0x%02x     0x%02x\n",
-		msg, nolock_regb_read(priv, EREVID),
-		nolock_regb_read(priv, ECON1), nolock_regb_read(priv, ECON2),
-		nolock_regb_read(priv, ESTAT), nolock_regb_read(priv, EIR),
-		nolock_regb_read(priv, EIE), nolock_regb_read(priv, MACON1),
-		nolock_regb_read(priv, MACON3), nolock_regb_read(priv, MACON4),
-		nolock_regw_read(priv, ERXSTL), nolock_regw_read(priv, ERXNDL),
-		nolock_regw_read(priv, ERXWRPTL),
-		nolock_regw_read(priv, ERXRDPTL),
-		nolock_regb_read(priv, ERXFCON),
-		nolock_regb_read(priv, EPKTCNT),
-		nolock_regw_read(priv, MAMXFLL), nolock_regw_read(priv, ETXSTL),
-		nolock_regw_read(priv, ETXNDL),
-		nolock_regb_read(priv, MACLCON1),
-		nolock_regb_read(priv, MACLCON2),
-		nolock_regb_read(priv, MAPHSUP));
-	mutex_unlock(&priv->lock);
-#endif
-}
-
-/*
  * Low power mode shrinks power consumption about 100x, so we'd like
  * the chip to be in that mode whenever it's inactive.  (However, we
  * can't stay in lowpower mode during suspend with WOL active.)
@@ -667,7 +625,7 @@ static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
 
 	do {
 		enc424j600_phy_read(priv, PHSTAT1, &phstat1);
-	} while(!(phstat1 & ANDONE));
+	} while (!(phstat1 & ANDONE));
 }
 
 /* Sets the protected area in rx buffer to be 2 bytes long
@@ -723,7 +681,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	 */
 	enc424j600_read_8b_sfr(priv, EIDLEDL, &eidledl);
 
-	if((eidledl & DEVID_MASK) >> DEVID_SHIFT != ENC424J600_DEV_ID){
+	if ((eidledl & DEVID_MASK) >> DEVID_SHIFT != ENC424J600_DEV_ID) {
 		if (netif_msg_drv(priv))
 			printk(KERN_DEBUG DRV_NAME ": %s() Invalid device ID: %d\n",
 				__func__, (eidledl & DEVID_MASK) >> DEVID_SHIFT);
@@ -749,17 +707,15 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 		/* Enable autonegotiation and renegotiate */
 		phcon1 |= ANEN | RENEG;
 	} else {
-		if(priv->speed100)
+		if (priv->speed100)
 			phcon1 |= SPD100;
-		if(priv->full_duplex)
+		if  (priv->full_duplex)
 			phcon1 |= PFULDPX;
 	}
 	enc424j600_phy_write(priv, PHCON1, phcon1);
 
 	/* jedno tluste TODO */
 	enc424j600_check_link_status(priv);
-
-	// TODO: First PHY, then MAC ?
 
 	/* MACON2
 	 * defer transmission if collision occurs (only for half duplex)
@@ -785,7 +741,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 
 	/* MAIPGL
 	 * Recomended values for inter packet gaps */
-	if (!priv->autoneg){
+	if (!priv->autoneg) {
 		enc424j600_write_16b_sfr(priv, MAIPGL, MAIPGL_VAL | MAIPGH_VAL << 8);
 	}
 
@@ -803,9 +759,6 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 		TXABTIE | RXABTIE);
 
 	mutex_unlock(&priv->lock);
-
-	if (netif_msg_hw(priv))
-		enc424j600_dump_regs(priv, "Hw initialized.");
 
 	return 1;
 }
@@ -1019,42 +972,6 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	enc424j600_set_bits(priv, ECON1H, PKTDEC);
 	mutex_unlock(&priv->lock);
 }
-
-#if 0
-/*
- * Calculate free space in RxFIFO
- * TODO: This function may come handy.
- */
-static int enc424j600_get_free_rxfifo(struct enc424j600_net *priv)
-{
-	int epkcnt, erxst, erxnd, erxwr, erxrd;
-	int free_space;
-
-	mutex_lock(&priv->lock);
-	epkcnt = nolock_regb_read(priv, EPKTCNT);
-	if (epkcnt >= 255)
-		free_space = -1;
-	else {
-		erxst = nolock_regw_read(priv, ERXSTL);
-		erxnd = nolock_regw_read(priv, ERXNDL);
-		erxwr = nolock_regw_read(priv, ERXWRPTL);
-		erxrd = nolock_regw_read(priv, ERXRDPTL);
-
-		if (erxwr > erxrd)
-			free_space = (erxnd - erxst) - (erxwr - erxrd);
-		else if (erxwr == erxrd)
-			free_space = (erxnd - erxst);
-		else
-			free_space = erxrd - erxwr - 1;
-	}
-	mutex_unlock(&priv->lock);
-	if (netif_msg_rx_status(priv))
-		printk(KERN_DEBUG DRV_NAME ": %s() free_space = %d\n",
-			__func__, free_space);
-	return free_space;
-	return 0;
-}
-#endif
 
 /*
  * Access the PHY to determine link status
