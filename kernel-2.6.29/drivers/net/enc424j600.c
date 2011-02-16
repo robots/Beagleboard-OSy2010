@@ -750,7 +750,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	 * interrupt enable flag.
 	 */
 	enc424j600_write_16b_sfr(priv, EIEL,
-		LINKIE << 8 | PKTIE | DMAIE | TXIE |
+		LINKIE << 8 | PKTIE | TXIE |
 		TXABTIE | RXABTIE);
 
 	mutex_unlock(&priv->lock);
@@ -1126,6 +1126,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 	enc424j600_clear_bits(priv, EIEH, INTIE);
 
 	do {
+		printk("irq\n");
 		u8 eirh;
 		u8 eirl;
 
