@@ -154,7 +154,7 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 	/* First set the general purpose write pointer */
 	priv->spi_tx_buf[0] = WGPWRPT;
 	priv->spi_tx_buf[1] = dstaddr & 0xFF;
-	priv->spi_tx_buf[2] = dstaddr >> 8;	
+	priv->spi_tx_buf[2] = dstaddr >> 8;
 	enc424j600_spi_trans(priv, 3);
 
 	/* Copy the data to the tx buffer */
@@ -170,22 +170,22 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 		u8 verify_buffer[64];
 		int verify_len;
 		int k;
-		
+
 		if (len > sizeof(verify_buffer))
 			verify_len = sizeof(verify_buffer);
 		else
 			verify_len = len;
-		
+
 		enc424j600_read_sram(priv, verify_buffer, verify_len, dstaddr);
 
 		for (k = 0; k < verify_len; k++) {
-                        if (src[k] != verify_buffer[k]) {
-                                printk(KERN_DEBUG DRV_NAME
-                                         ": RAM write verify error, %d location "
-					 "differs: 0x%02x-0x%02x\n", k,
-                                         src[k], verify_buffer[k]);
-                        }
-                }
+			if (src[k] != verify_buffer[k]) {
+			printk(KERN_DEBUG DRV_NAME
+				": RAM write verify error, %d location "
+				"differs: 0x%02x-0x%02x\n", k,
+				src[k], verify_buffer[k]);
+			}
+		}
 	}
 #endif
 
@@ -336,7 +336,7 @@ static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 				 "0x%02x; mask: 0x%02x\n", val, mask);
 	}
 #endif
-	
+
 	return ret;
 }
 
@@ -466,7 +466,7 @@ static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask
 static int enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *data)
 {
 	int ret;
-	
+
 	enc424j600_write_16b_sfr(priv, MIREGADRL, address | (MIREGADRH_VAL << 8));
 	enc424j600_write_16b_sfr(priv, MICMDL, MIIRD);
 	udelay(26);
@@ -611,10 +611,10 @@ static void enc424j600_lowpower_enable(struct enc424j600_net *priv)
 	mutex_lock(&priv->lock);
 
 	enc424j600_clear_bits(priv, ECON1L, RXEN);
-	
+
 	poll_ready(priv, ESTATH, RXBUSY, 0);
 	poll_ready(priv, ECON1L, TXRTS, 0);
-	
+
 	enc424j600_phy_read(priv, PHCON1, &phcon1);
 	phcon1 |= PSLEEP;
 	enc424j600_phy_write(priv, PHCON1, phcon1);
@@ -664,7 +664,7 @@ static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv)
 
 	if (tail < ERXST_VAL)
 		tail = SRAM_SIZE - 2;
-	
+
 	enc424j600_write_16b_sfr(priv, ERXTAILL, tail);
 }
 
@@ -718,16 +718,16 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	if (netif_msg_drv(priv))
 		printk(KERN_INFO DRV_NAME ": Silicon revision ID: 0x%02x\n",
 			(eidledl & REVID_MASK) >> REVID_SHIFT);
-	
+
 
 	/* Prepare the receive buffer */
 	enc424j600_prepare_rx_buffer(priv);
 
 	enc424j600_set_hw_filters(priv);
-	
+
 	/* PHANA */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
-	
+
 	/* PHCON1 */
 	phcon1 = 0;
 	if (priv->autoneg) {
@@ -759,8 +759,8 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* LED settings */
 	enc424j600_write_8b_sfr(priv, EIDLEDH,
 		(LED_A_SETTINGS << 4 | LED_B_SETTINGS));
-	
-	/* 
+
+	/*
 	 * Select enabled interrupts, but don't set the global
 	 * interrupt enable flag.
 	 */
@@ -902,7 +902,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	if (netif_msg_rx_status(priv))
 		printk(KERN_DEBUG DRV_NAME ": RX pk_addr:0x%04x\n",
 			priv->next_pk_ptr);
-	
+
 	// TODO corrupted packet addresses
 	#if 0
 	if (unlikely(priv->next_pk_ptr > RXEND_INIT)) {
@@ -923,7 +923,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 		return;
 	}
 	#endif
-	
+
 	/* Read next packet pointer and rx status vector */
 	enc424j600_read_rx_area(priv, rsv, sizeof(rsv), priv->next_pk_ptr);
 
@@ -1000,7 +1000,7 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 				enc424j600_read_16b_sfr(priv, MACON2L, &macon2);
 				macon2 |= FULDPX;
 				enc424j600_write_16b_sfr(priv, MACON2L, macon2);
-				
+
 				priv->full_duplex = true;
 			} else {
 				priv->full_duplex = false;
@@ -1008,7 +1008,7 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 
 			enc424j600_phy_read(priv, PHCON1, &phcon1);
 			priv->speed100 = (phcon1 & SPD100) != 0;
-			
+
 		}
 		netif_carrier_on(priv->netdev);
 		if (netif_msg_ifup(priv))
@@ -1065,7 +1065,7 @@ static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
 			": intTX\n");
-	
+
 	mutex_lock(&priv->lock);
 	enc424j600_tx_clear(priv, false);
 	mutex_unlock(&priv->lock);
@@ -1074,7 +1074,7 @@ static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
 static void enc424j600_int_tx_err_handler(struct enc424j600_net *priv)
 {
 	u16 etxstat;
-	
+
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
 			": intTXErr\n");
@@ -1136,7 +1136,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
-	
+
 	/* disable further interrupts */
 	enc424j600_clear_bits(priv, EIEH, INTIE);
 
@@ -1206,7 +1206,7 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 	if (netif_msg_pktdata(priv))
 		dump_packet(__func__,
 			priv->tx_skb->len, priv->tx_skb->data);
-	
+
 	mutex_lock(&priv->lock);
 
 	/* Copy the packet into the transmit buffer */
@@ -1219,7 +1219,7 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 
 	/* Write the transfer length */
 	enc424j600_write_16b_sfr(priv, ETXLENL, priv->tx_skb->len);
-	
+
 	/* set TX request flag */
 	enc424j600_set_bits(priv, ECON1L, TXRTS);
 
@@ -1536,9 +1536,9 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 						      GFP_DMA);
 
 		if (priv->spi_tx_buf) {
-			priv->spi_rx_buf = (u8 *)(priv->spi_tx_buf +
+			priv->spi_rx_buf = (u8 *)(priv->spi_tx_buf
 						  (PAGE_SIZE / 2));
-			priv->spi_rx_dma = (dma_addr_t)(priv->spi_tx_dma +
+			priv->spi_rx_dma = (dma_addr_t)(priv->spi_tx_dma
 							(PAGE_SIZE / 2));
 		} else {
 			/* Fall back to non-DMA */
