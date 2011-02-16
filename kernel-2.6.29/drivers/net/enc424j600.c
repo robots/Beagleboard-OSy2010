@@ -1141,7 +1141,6 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 	enc424j600_clear_bits(priv, EIEH, INTIE);
 
 	do {
-		printk("irq\n");
 		u8 eirh;
 		u8 eirl;
 
