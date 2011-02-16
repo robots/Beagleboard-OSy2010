@@ -601,36 +601,51 @@ static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
 	return enc424j600_set_hw_macaddr(dev);
 }
 
-/*
- * Low power mode shrinks power consumption about 100x, so we'd like
- * the chip to be in that mode whenever it's inactive.  (However, we
- * can't stay in lowpower mode during suspend with WOL active.)
- * TODO
- */
-static void enc424j600_lowpower(struct enc424j600_net *priv, bool is_low)
+static void enc424j600_lowpower_enable(struct enc424j600_net *priv)
 {
-	if (netif_msg_drv(priv))
-		dev_dbg(&priv->spi->dev, "%s power...\n",
-				is_low ? "low" : "high");
+	u16 phcon1;
 
-#if 0
+	if (netif_msg_drv(priv))
+		dev_dbg(&priv->spi->dev, "low power...\n");
+
 	mutex_lock(&priv->lock);
-	if (is_low) {
-		nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
-		poll_ready(priv, ESTAT, ESTAT_RXBUSY, 0);
-		poll_ready(priv, ECON1, ECON1_TXRTS, 0);
-		/* ECON2_VRPS was set during initialization */
-		nolock_reg_bfset(priv, ECON2, ECON2_PWRSV);
-	} else {
-		nolock_reg_bfclr(priv, ECON2, ECON2_PWRSV);
-		poll_ready(priv, ESTAT, ESTAT_CLKRDY, ESTAT_CLKRDY);
-		/* caller sets ECON1_RXEN */
-	}
+
+	enc424j600_clear_bits(priv, ECON1L, RXEN);
+	
+	poll_ready(priv, ESTATH, RXBUSY, 0);
+	poll_ready(priv, ECON1L, TXRTS, 0);
+	
+	enc424j600_phy_read(priv, PHCON1, &phcon1);
+	phcon1 |= PSLEEP;
+	enc424j600_phy_write(priv, PHCON1, phcon1);
+
+	enc424j600_clear_bits(priv, ECON2H, ETHEN | STRCH);
+
 	mutex_unlock(&priv->lock);
-#endif
 }
 
-/* Waits for autonegotiation to complete and sets FULDPX bit in macon2. */
+static void enc424j600_lowpower_disable(struct enc424j600_net *priv)
+{
+	u16 phcon1;
+
+	if (netif_msg_drv(priv))
+		dev_dbg(&priv->spi->dev, "high power...\n");
+
+	mutex_lock(&priv->lock);
+
+	enc424j600_set_bits(priv, ECON2H, ETHEN | STRCH);
+
+	enc424j600_phy_read(priv, PHCON1, &phcon1);
+	phcon1 &= ~PSLEEP;
+	enc424j600_phy_write(priv, PHCON1, phcon1);
+
+	enc424j600_set_bits(priv, ECON1L, RXEN);
+
+	mutex_unlock(&priv->lock);
+}
+
+/* Waits for autonegotiation to complete and sets FULDPX bit in macon2.
+ * TODO Sets FULDPX? */
 static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
 {
 	u16 phstat1;
@@ -1297,7 +1312,7 @@ static int enc424j600_net_open(struct net_device *dev)
 		return -EADDRNOTAVAIL;
 	}
 	/* Reset the hardware here (and take it out of low power mode) */
-	enc424j600_lowpower(priv, false);
+	enc424j600_lowpower_disable(priv);
 	enc424j600_hw_disable(priv);
 	if (!enc424j600_hw_init(priv)) {
 		if (netif_msg_ifup(priv))
@@ -1327,7 +1342,7 @@ static int enc424j600_net_close(struct net_device *dev)
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
 	enc424j600_hw_disable(priv);
-	enc424j600_lowpower(priv, true);
+	enc424j600_lowpower_enable(priv);
 	netif_stop_queue(dev);
 
 	return 0;
@@ -1569,7 +1584,7 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 	dev->watchdog_timeo = TX_TIMEOUT;
 	SET_ETHTOOL_OPS(dev, &enc424j600_ethtool_ops);
 
-	enc424j600_lowpower(priv, true);
+	enc424j600_lowpower_enable(priv);
 
 	ret = register_netdev(dev);
 	if (ret) {
