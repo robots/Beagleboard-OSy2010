@@ -40,7 +40,7 @@
 
 #define MAX_TX_RETRYCOUNT	16
 
-static int enc424j600_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
+static int enc424j600_enable_dma = 1; /* Enable SPI DMA. Default: 1 (On) */
 
 enum {
 	RXFILTER_NORMAL,
@@ -1651,4 +1651,4 @@ MODULE_LICENSE("GPL");
 module_param_named(debug, debug.msg_enable, int, 0);
 MODULE_PARM_DESC(debug, "Debug verbosity level (0=none, ..., ffff=all)");
 module_param(enc424j600_enable_dma, int, S_IRUGO);
-MODULE_PARM_DESC(enc424j600_enable_dma, "Enable SPI DMA. Default: 0 (Off)");
+MODULE_PARM_DESC(enc424j600_enable_dma, "Enable SPI DMA. Default: 1 (On)");
