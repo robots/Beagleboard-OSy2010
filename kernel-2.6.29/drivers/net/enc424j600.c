@@ -731,6 +731,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	 * pad to 60 or 64 bytes and append CRC
 	 * enable receiving huge frames (instead of limiting packet size) */
 	macon2 = MACON2_DEFER | PADCFG2 | PADCFG0 | TXCRCEN | HFRMEN;
+	enc424j600_write_16b_sfr(priv, MACON2L, macon2);
 
 	enc424j600_check_link_status(priv);
 
