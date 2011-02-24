@@ -105,7 +105,7 @@ static int enc424j600_spi_trans(struct enc424j600_net *priv, int len)
 
 	ret = spi_sync(priv->spi, &m);
 	if (ret)
-		dev_err(&priv->spi->dev, "spi transfer failed: ret = %d\n", ret);
+		dev_err(&priv->spi->dev, "spi transfer failed (%d)\n", ret);
 	return ret;
 }
 
@@ -118,9 +118,8 @@ static int enc424j600_read_sram(struct enc424j600_net *priv,
 {
 	int ret;
 
-	if (len > SPI_TRANSFER_BUF_LEN - 1 || len <= 0) {
+	if (len > SPI_TRANSFER_BUF_LEN - 1 || len <= 0)
 		return -EINVAL;
-	}
 
 	/* First set the general purpose read pointer */
 	priv->spi_tx_buf[0] = WGPRDPT;
@@ -147,9 +146,8 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 {
 	int ret;
 
-	if (len > SPI_TRANSFER_BUF_LEN - 1 || len <= 0) {
+	if (len > SPI_TRANSFER_BUF_LEN - 1 || len <= 0)
 		return -EINVAL;
-	}
 
 	/* First set the general purpose write pointer */
 	priv->spi_tx_buf[0] = WGPWRPT;
@@ -178,14 +176,12 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 
 		enc424j600_read_sram(priv, verify_buffer, verify_len, dstaddr);
 
-		for (k = 0; k < verify_len; k++) {
-			if (src[k] != verify_buffer[k]) {
-			printk(KERN_DEBUG DRV_NAME
-				": RAM write verify error, %d location "
-				"differs: 0x%02x-0x%02x\n", k,
-				src[k], verify_buffer[k]);
-			}
-		}
+		for (k = 0; k < verify_len; k++)
+			if (src[k] != verify_buffer[k])
+				printk(KERN_DEBUG DRV_NAME
+					": RAM write verify error, %d location "
+					"differs: 0x%02x-0x%02x\n", k,
+					src[k], verify_buffer[k]);
 	}
 #endif
 
@@ -251,8 +247,8 @@ static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
 
 		if (val != data)
 			printk(KERN_DEBUG DRV_NAME
-				 ": 8 bit sfr write verify error, values differ: "
-				 "0x%02x - 0x%02x\n", val, data);
+				 ": 8 bit sfr write verify error, "
+				 "values differ: 0x%02x - 0x%02x\n", val, data);
 	}
 #endif
 
@@ -265,7 +261,8 @@ static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
  * Takes care of the endiannes & buffers.
  * Uses banked read instruction.
  */
-static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
+static int
+enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
 {
 	int ret;
 
@@ -285,7 +282,8 @@ static int enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *dat
  * Takes care of the endiannes & buffers.
  * Uses banked write instruction.
  */
-static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 data)
+static int
+enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 data)
 {
 	int ret;
 
@@ -304,8 +302,8 @@ static int enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 dat
 
 		if (val != data)
 			printk(KERN_DEBUG DRV_NAME
-				 ": 8 bit sfr write verify error, values differ: "
-				 "0x%02x - 0x%02x\n", val, data);
+				 ": 16 bit sfr write verify error, "
+				 "values differ: 0x%02x - 0x%02x\n", val, data);
 	}
 #endif
 
@@ -332,7 +330,7 @@ static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 
 		if ((val & mask) != mask)
 			printk(KERN_DEBUG DRV_NAME
-				 ": set_bits verify error, all bits are not set: "
+				 ": set_bits verify error: "
 				 "0x%02x; mask: 0x%02x\n", val, mask);
 	}
 #endif
@@ -360,8 +358,8 @@ static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 
 		if ((val & mask) != 0)
 			printk(KERN_DEBUG DRV_NAME
-				": set_bits verify error, all bits are not "
-				"cleared: 0x%02x; mask: 0x%02x\n", val, mask);
+				": set_bits verify error: "
+				"0x%02x; mask: 0x%02x\n", val, mask);
 	}
 #endif
 
@@ -379,14 +377,12 @@ static int enc424j600_read_rx_area(struct enc424j600_net *priv,
 	int ret;
 	int split;
 
-	if (srcaddr >= SRAM_SIZE) {
+	if (srcaddr >= SRAM_SIZE)
 		srcaddr -= RX_BUFFER_SIZE;
-	}
 
 	if (srcaddr + len < SRAM_SIZE) {
 		return enc424j600_read_sram(priv, dst, len, srcaddr);
 	} else {
-		// length of the first half
 		split = SRAM_SIZE - srcaddr + 1;
 		ret = enc424j600_read_sram(priv, dst, split, srcaddr);
 		if (ret)
@@ -412,12 +408,12 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 	if (netif_msg_hw(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
-	do{
+	do {
 		enc424j600_write_16b_sfr(priv, EUDASTL, EUDAST_TEST_VAL);
 		enc424j600_read_16b_sfr(priv, EUDASTL, &eudast);
 	} while (eudast != EUDAST_TEST_VAL);
 
-	do{
+	do {
 		enc424j600_read_8b_sfr(priv, ESTATH, &estath);
 	} while (!estath & CLKRDY);
 
@@ -428,7 +424,8 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 
 	enc424j600_read_16b_sfr(priv, EUDASTL, &eudast);
 	if (netif_msg_hw(priv) && eudast != 0)
-		printk(KERN_DEBUG DRV_NAME ": %s() EUDAST is not zero!\n", __func__);
+		printk(KERN_DEBUG DRV_NAME
+			": %s() EUDAST is not zero!\n", __func__);
 
 	udelay(500);
 }
@@ -438,7 +435,8 @@ static unsigned long msec20_to_jiffies;
 /*
  * Wait for bits in register to become equal to @readyMask, but at most 20ms.
  */
-static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask)
+static int
+poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask)
 {
 	unsigned long timeout = jiffies + msec20_to_jiffies;
 	u8 value;
@@ -463,11 +461,13 @@ static int poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask
  * PHY register read
  * PHY registers are not accessed directly, but through the MII
  */
-static int enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *data)
+static int
+enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *data)
 {
 	int ret;
 
-	enc424j600_write_16b_sfr(priv, MIREGADRL, address | (MIREGADRH_VAL << 8));
+	enc424j600_write_16b_sfr(priv, MIREGADRL,
+		address | (MIREGADRH_VAL << 8));
 	enc424j600_write_16b_sfr(priv, MICMDL, MIIRD);
 	udelay(26);
 	ret = !poll_ready(priv, MISTATL, BUSY, 0);
@@ -476,10 +476,12 @@ static int enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *da
 	return ret;
 }
 
-static int enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
+static int
+enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 {
 	int ret;
-	enc424j600_write_16b_sfr(priv, MIREGADRL, address | (MIREGADRH_VAL << 8));
+	enc424j600_write_16b_sfr(priv, MIREGADRL,
+		address | (MIREGADRH_VAL << 8));
 	enc424j600_write_16b_sfr(priv, MIWRL, data);
 	udelay(26);
 	ret = !poll_ready(priv, MISTATL, BUSY, 0);
@@ -576,9 +578,12 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 			": %s: Setting MAC address to %pM\n",
 			ndev->name, ndev->dev_addr);
 
-	enc424j600_write_16b_sfr(priv, MAADR1L, ndev->dev_addr[0] | ndev->dev_addr[1] << 8);
-	enc424j600_write_16b_sfr(priv, MAADR2L, ndev->dev_addr[2] | ndev->dev_addr[3] << 8);
-	enc424j600_write_16b_sfr(priv, MAADR3L, ndev->dev_addr[4] | ndev->dev_addr[5] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR1L,
+		ndev->dev_addr[0] | ndev->dev_addr[1] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR2L,
+		ndev->dev_addr[2] | ndev->dev_addr[3] << 8);
+	enc424j600_write_16b_sfr(priv, MAADR3L,
+		ndev->dev_addr[4] | ndev->dev_addr[5] << 8);
 
 	mutex_unlock(&priv->lock);
 
@@ -710,8 +715,9 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 
 	if ((eidledl & DEVID_MASK) >> DEVID_SHIFT != ENC424J600_DEV_ID) {
 		if (netif_msg_drv(priv))
-			printk(KERN_DEBUG DRV_NAME ": %s() Invalid device ID: %d\n",
-				__func__, (eidledl & DEVID_MASK) >> DEVID_SHIFT);
+			printk(KERN_DEBUG DRV_NAME
+				": %s() Invalid device ID: %d\n", __func__,
+				(eidledl & DEVID_MASK) >> DEVID_SHIFT);
 		return 0;
 	}
 
@@ -850,7 +856,8 @@ static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
 	printk(KERN_DEBUG DRV_NAME ": Byte count: %d\n", len);
 
 #define PRINT_RSV_BIT(value, desc) \
-	printk(KERN_DEBUG DRV_NAME ": " desc ": %d\n", RSV_GETBIT(rxstat, (value)))
+	printk(KERN_DEBUG DRV_NAME ": " desc ": %d\n", \
+		RSV_GETBIT(rxstat, (value)))
 
 	PRINT_RSV_BIT(RSV_UNICAST_FILTER, "Unicast Filter Match");
 	PRINT_RSV_BIT(RSV_PATTERN_FILTER, "Pattern Match Filter Match");
@@ -901,7 +908,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 		printk(KERN_DEBUG DRV_NAME ": RX pk_addr:0x%04x\n",
 			priv->next_pk_ptr);
 
-	// TODO corrupted packet addresses
+	/* TODO corrupted packet addresses */
 	#if 0
 	if (unlikely(priv->next_pk_ptr > RXEND_INIT)) {
 		if (netif_msg_rx_err(priv))
@@ -1149,7 +1156,8 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 		u8 eirl;
 
 		enc424j600_read_16b_sfr(priv, EIRL, &eir);
-		/* TODO: Possible race condition here! Is it even possible to avoid this? */
+		/* TODO: Possible race condition here!
+		 * Is it even possible to avoid this? */
 		eirh = eir >> 8;
 		eirl = eir & 0xff;
 		enc424j600_clear_bits(priv, EIRL, eirl);
@@ -1165,29 +1173,24 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 		 */
 
 		/* link changed handler */
-		if ((eirh & LINKIF) != 0) {
+		if ((eirh & LINKIF) != 0)
 			enc424j600_int_link_handler(priv);
-		}
 
 		/* TX complete handler */
-		if ((eirl & TXIF) != 0) {
+		if ((eirl & TXIF) != 0)
 			enc424j600_int_tx_handler(priv);
-		}
 
 		/* TX Error handler */
-		if ((eirl & TXABTIF) != 0) {
+		if ((eirl & TXABTIF) != 0)
 			enc424j600_int_tx_err_handler(priv);
-		}
 
 		/* RX Error handler */
-		if ((eirl & RXABTIF) != 0) {
+		if ((eirl & RXABTIF) != 0)
 			enc424j600_int_rx_abbort_handler(priv);
-		}
 
 		/* RX handler */
-		if ((eirl & PKTIF) != 0) {
+		if ((eirl & PKTIF) != 0)
 			enc424j600_int_received_packet_handler(priv);
-		}
 	} while (eir);
 
 	/* re-enable interrupts */
@@ -1574,7 +1577,8 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 	/* Board setup must set the relevant edge trigger type;
 	 * level triggers won't currently work.
 	 */
-	ret = request_irq(spi->irq, enc424j600_irq, IRQF_TRIGGER_FALLING, DRV_NAME, priv);
+	ret = request_irq(spi->irq, enc424j600_irq,
+		IRQF_TRIGGER_FALLING, DRV_NAME, priv);
 	if (ret < 0) {
 		if (netif_msg_probe(priv))
 			dev_err(&spi->dev, DRV_NAME ": request irq %d failed "

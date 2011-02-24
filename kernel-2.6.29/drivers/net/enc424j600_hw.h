@@ -188,8 +188,10 @@
 #define RUDAWRPT	0x76	/* Read EUDAWRPT */
 
 /* n byte instructions */
-#define RCR(addr)	(0x00 | (addr & ADDR_MASK))	/* Read Control Register */
-#define WCR(addr)	(0x40 | (addr & ADDR_MASK))	/* Write Control Register */
+#define RCR(addr)	(0x00 | (addr & ADDR_MASK))
+	/* Read Control Register */
+#define WCR(addr)	(0x40 | (addr & ADDR_MASK))
+	/* Write Control Register */
 #define RCRU		0x20	/* Read Control Register Unbanked */
 #define WCRU		0x22	/* Write Control Register Unbanked */
 #define BFS(addr)	(0x80 | (addr & ADDR_MASK))	/* Bit Field Set */
@@ -295,14 +297,14 @@
 
 /* MAIPG */
 /* value of the high byte is given by the reserved bits,
- * value of the low byte is recomended setting of the 
+ * value of the low byte is recomended setting of the
  * IPG parameter.
  */
 #define MAIPGH_VAL	0x0C
 #define MAIPGL_VAL	0x12
 
 /* MABBIPG */
-/* back to back inter-packet gap 
+/* back to back inter-packet gap
  * There are two values -- one for half duplex and another for
  * full duplex
  * -> datasheet section 8.9
