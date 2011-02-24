@@ -752,9 +752,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 
 	/* MAIPGL
 	 * Recomended values for inter packet gaps */
-	if (!priv->autoneg) {
-		enc424j600_write_16b_sfr(priv, MAIPGL, MAIPGL_VAL | MAIPGH_VAL << 8);
-	}
+	enc424j600_write_16b_sfr(priv, MAIPGL, MAIPGL_VAL | MAIPGH_VAL << 8);
 
 	/* LED settings */
 	enc424j600_write_8b_sfr(priv, EIDLEDH,
