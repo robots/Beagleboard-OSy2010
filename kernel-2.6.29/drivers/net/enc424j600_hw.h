@@ -301,6 +301,14 @@
 #define MAIPGH_VAL	0x0C
 #define MAIPGL_VAL	0x12
 
+/* MABBIPG */
+/* back to back inter-packet gap 
+ * There are two values -- one for half duplex and another for
+ * full duplex
+ * -> datasheet section 8.9
+ */
+#define MABBIPG_HALF_VAL	0x12
+#define MABBIPG_FULL_VAL	0x15
 /* MIREGADRH */
 #define MIREGADRH_VAL	0x01
 

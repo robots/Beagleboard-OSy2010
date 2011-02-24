@@ -1001,8 +1001,14 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 				macon2 |= FULDPX;
 				enc424j600_write_16b_sfr(priv, MACON2L, macon2);
 
+				enc424j600_write_16b_sfr(priv, MABBIPGL,
+					MABBIPG_FULL_VAL);
+
 				priv->full_duplex = true;
 			} else {
+				enc424j600_write_16b_sfr(priv, MABBIPGL,
+					MABBIPG_HALF_VAL);
+
 				priv->full_duplex = false;
 			}
 
