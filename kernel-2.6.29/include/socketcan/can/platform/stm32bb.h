@@ -18,7 +18,7 @@
 
 struct stm32bb_platform_data {
 	int (*board_specific_setup)(struct spi_device *spi);
-	int data_ready;
+	int transfer_ready;
 };
 
 #endif /* __CAN_PLATFORM_MCP251X_H__ */

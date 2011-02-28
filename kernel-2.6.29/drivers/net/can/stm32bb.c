@@ -91,7 +91,9 @@ struct stm32bb_priv {
 
 	struct sk_buff *tx_skb;
 	int tx_len;
+	atomic_t transfer_ready;
 	struct workqueue_struct *wq;
+	wait_queue_head_t	spi_wait;
 	struct work_struct tx_work;
 	struct work_struct irq_work;
 
@@ -108,7 +110,11 @@ struct stm32bb_priv {
 /*
  * low level HW functions 
  */
-static int stm32bb_spi_trans(struct spi_device *spi, int len)
+static void stm32bb_spi_dummy_cb(void *dummy)
+{
+}
+
+static int stm32bb_spi_trans(struct spi_device *spi, uint8_t cmd, int len)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	struct spi_transfer t = {
@@ -118,6 +124,7 @@ static int stm32bb_spi_trans(struct spi_device *spi, int len)
 		.cs_change = 0,
 	};
 	struct spi_message m;
+	uint8_t tmp;
 	int ret;
 
 	spi_message_init(&m);
@@ -125,6 +132,43 @@ static int stm32bb_spi_trans(struct spi_device *spi, int len)
 	if (stm32bb_enable_dma) {
 		t.tx_dma = priv->spi_tx_dma;
 		t.rx_dma = priv->spi_rx_dma;
+		m.is_dma_mapped = 1;
+	}
+
+	// save the first byte
+	tmp = priv->spi_tx_buf[0];
+
+	// replace by cmd
+	priv->spi_tx_buf[0] = cmd;
+	t.len = 1;
+
+	spi_message_add_tail(&t, &m);
+
+	m.complete = stm32bb_spi_dummy_cb;
+
+	// submit transfer
+	ret = spi_async(spi, &m);
+	if (ret) {
+		dev_err(&spi->dev, "spi transfer failed: ret = %d\n", ret);
+		return ret;
+	}
+
+	// wait for interrupt
+	wait_event_interruptible(priv->spi_wait, atomic_read(&priv->transfer_ready));
+
+	if (!atomic_read(&priv->transfer_ready))
+		return -1;
+
+	atomic_set(&priv->transfer_ready, 0);
+
+
+	// return the saved byte
+	priv->spi_tx_buf[0] = tmp;
+	t.len = len;
+
+	spi_message_init(&m);
+
+	if (stm32bb_enable_dma) {
 		m.is_dma_mapped = 1;
 	}
 
@@ -141,14 +185,11 @@ static uint32_t stm32bb_read_reg(struct spi_device *spi, uint8_t reg, uint8_t le
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	uint32_t val = 0;
-	uint8_t *buf = priv->spi_rx_buf+2;
+	uint8_t *buf = priv->spi_rx_buf;
 
 	mutex_lock(&priv->spi_lock);
 
-	priv->spi_tx_buf[0] = reg & 0x3f;
-	priv->spi_tx_buf[1] = 0;
-
-	stm32bb_spi_trans(spi, len+2);
+	stm32bb_spi_trans(spi, reg & 0x3f, len);
 
 	// we receive LSByte first
 	val = buf[0];
@@ -165,19 +206,16 @@ static uint32_t stm32bb_read_reg(struct spi_device *spi, uint8_t reg, uint8_t le
 static void stm32bb_write_reg(struct spi_device *spi, uint8_t reg, uint32_t val, uint8_t len)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
-	uint8_t *buf = priv->spi_tx_buf+2;
+	uint8_t *buf = priv->spi_tx_buf;
 
 	mutex_lock(&priv->spi_lock);
-
-	priv->spi_tx_buf[0] = reg | CMD_WRITE;
-	priv->spi_tx_buf[1] = 0x00;
 
 	buf[0] = (uint8_t) (0xff & val);
 	buf[1] = (uint8_t) (0xff & (val >> 8));
 	buf[2] = (uint8_t) (0xff & (val >> 16));
 	buf[3] = (uint8_t) (0xff & (val >> 24));
 
-	stm32bb_spi_trans(spi, len+2);
+	stm32bb_spi_trans(spi, reg | CMD_WRITE, len+2);
 //dev_err(&spi->dev, "write_reg(0x%04x, %d) = 0x%08x\n", reg, len, val);
 
 	mutex_unlock(&priv->spi_lock);
@@ -187,15 +225,12 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	uint32_t exide, rtr;
-	uint8_t *buf = priv->spi_tx_buf+2;
+	uint8_t *buf = priv->spi_tx_buf;
 
 	exide = (frame->can_id & CAN_EFF_FLAG) ? 1 : 0; /* Extended ID Enable */
 	rtr = (frame->can_id & CAN_RTR_FLAG) ? 1 : 0; /* Remote transmission */
 
 	mutex_lock(&priv->spi_lock);
-
-	priv->spi_tx_buf[0] = CAN_TX | CMD_WRITE;
-	priv->spi_tx_buf[1] = 0x00;
 
 	/* write flag */
 	buf[0] = rtr << 4 | exide << 5 | (frame->can_dlc & 0x0f);
@@ -209,65 +244,64 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 	memcpy(buf + 5, frame->data, frame->can_dlc);
 
 	/* send frame */
-	stm32bb_spi_trans(spi, 2+13);// 2 cmd + 13  msg
+	stm32bb_spi_trans(spi, CAN_TX | CMD_WRITE, 13);
 	mutex_unlock(&priv->spi_lock);
 }
 
-static void stm32bb_hw_rx(struct spi_device *spi, int rx_idx)
+static void stm32bb_hw_rx(struct spi_device *spi)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	struct sk_buff *skb;
 	struct can_frame *frame;
 	/* buf points to actuall CAN msg in SPI buffer */
-	uint8_t *buf = priv->spi_rx_buf+2;
+	uint8_t *buf = priv->spi_rx_buf;
+	int i;
 
-	skb = alloc_can_skb(priv->net, &frame);
-	if (!skb) {
-		dev_err(&spi->dev, "cannot allocate RX skb\n");
-		priv->net->stats.rx_dropped++;
-		return;
-	}
 
 	mutex_lock(&priv->spi_lock);
 
-	priv->spi_tx_buf[0] = (rx_idx==0) ? CAN_RX0 : CAN_RX1;		// vyber buf ktory chceme citat
-	priv->spi_tx_buf[1] = 0x00;
-	stm32bb_spi_trans(spi, 2+13);// 2 cmd + 13 msg
+	stm32bb_spi_trans(spi, CAN_RX0, 13 * 16);// 16 msgs (13bytes each)
 
-	if (buf[0] & CAN_MSG_INV) {
-		mutex_unlock(&priv->spi_lock);
-		dev_err(&spi->dev, "Invalid message received - dropping\n");
-		dev_kfree_skb(skb);
-		return;
+	// parse each message from buffer, stop on invalid
+	for (i = 0; i < 16; i++, buf += 13) {
+		if (buf[0] & CAN_MSG_INV) {
+			break;
+		}
+
+		skb = alloc_can_skb(priv->net, &frame);
+		if (!skb) {
+			dev_err(&spi->dev, "cannot allocate RX skb\n");
+			priv->net->stats.rx_dropped++;
+			return;
+		}
+
+		frame->can_dlc = get_can_dlc(buf[0] & CAN_MSG_SIZE);
+		frame->can_id = buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
+
+		frame->can_id |= (buf[0] & CAN_MSG_RTR) ? CAN_RTR_FLAG : 0; /* rtr */
+		frame->can_id |= (buf[0] & CAN_MSG_EID) ? CAN_EFF_FLAG : 0; /* Extended ID Enable */
+
+		memcpy(frame->data, buf + 5, frame->can_dlc);
+
+		priv->net->stats.rx_packets++;
+		priv->net->stats.rx_bytes += frame->can_dlc;
+		netif_rx(skb);
 	}
 
-	frame->can_dlc = get_can_dlc(buf[0] & CAN_MSG_SIZE);
-	frame->can_id = buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
-
-	frame->can_id |= (buf[0] & CAN_MSG_RTR) ? CAN_RTR_FLAG : 0; /* rtr */
-	frame->can_id |= (buf[0] & CAN_MSG_EID) ? CAN_EFF_FLAG : 0; /* Extended ID Enable */
-
-	memcpy(frame->data, buf + 5, frame->can_dlc);
+	dev_err(&spi->dev, "received %d messages\n", i);
 
 	mutex_unlock(&priv->spi_lock);
 
-
-	priv->net->stats.rx_packets++;
-	priv->net->stats.rx_bytes += frame->can_dlc;
-	netif_rx(skb);
 }
 
 static void stm32bb_get_measurement(struct spi_device *spi)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
-	uint8_t *buf = priv->spi_rx_buf+2;
+	uint8_t *buf = priv->spi_rx_buf;
 
 	mutex_lock(&priv->spi_lock);
 
-	priv->spi_tx_buf[0] = PWR_DATA;
-	priv->spi_tx_buf[1] = 0x00;
-
-	stm32bb_spi_trans(spi, 2+8);// 2 cmd + 8
+	stm32bb_spi_trans(spi, PWR_DATA, 8);
 
 	priv->pwr_data.i_bat = buf[0] | buf[1] << 8;
 	priv->pwr_data.i_sys = buf[2] | buf[3] << 8;
@@ -279,12 +313,9 @@ static void stm32bb_get_measurement(struct spi_device *spi)
 static void stm32bb_set_current(struct spi_device *spi)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
-	uint8_t *buf = priv->spi_tx_buf+2;
+	uint8_t *buf = priv->spi_tx_buf;
 
 	mutex_lock(&priv->spi_lock);
-
-	priv->spi_tx_buf[0] = PWR_I_SET | CMD_WRITE;
-	priv->spi_tx_buf[1] = 0x00;
 
 	buf[0] = 0xff & priv->pwr_iset.i_ac;
 	buf[1] = 0xff & (priv->pwr_iset.i_ac >> 8);
@@ -292,7 +323,7 @@ static void stm32bb_set_current(struct spi_device *spi)
 	buf[2] = 0xff & priv->pwr_iset.i_bat;
 	buf[3] = 0xff & (priv->pwr_iset.i_bat >> 8);
 
-	stm32bb_spi_trans(spi, 2+4);// 2 cmd + 4
+	stm32bb_spi_trans(spi, PWR_I_SET | CMD_WRITE, 4);
 	mutex_unlock(&priv->spi_lock);
 }
 
@@ -621,7 +652,6 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 	struct spi_device *spi = priv->spi;
 	struct net_device *net = priv->net;
 	uint16_t intf;
-	uint16_t i;
 	int can_id_res = 0;
 
 	/* TODO: this probably wrong ! Test TEst TEST !
@@ -658,8 +688,8 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 
 	while (!priv->force_quit && !freezing(current)) {
+		// atomic read'n'clear
 		intf = stm32bb_read_reg(spi, SYS_INTF, 2);
-
 		if (intf == 0x0000) {
 			/* only way to leave loop is to serve every interrupt !!! */
 			break;
@@ -750,9 +780,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 			/* Data in FIFO0 */
 			if (intf & SYS_INT_CANRX0IF) {
 dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs status = %d\n", (can_status >> 8) & 0x0f, can_status);
-				// be sure to eat up all messages
-				for (i = 0; i < ((can_status >> 8) & 0x0f); i++)
-					stm32bb_hw_rx(spi, 0);
+				stm32bb_hw_rx(spi);
 			}
 
 			/* Message TX interrupt  */
@@ -824,6 +852,19 @@ static irqreturn_t stm32bb_can_isr(int irq, void *dev_id)
 	/* Schedule bottom half */
 	if (!work_pending(&priv->irq_work))
 		queue_work(priv->wq, &priv->irq_work);
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t stm32bb_transfer_ready_isr(int irq, void *dev_id)
+{
+	struct net_device *net = (struct net_device *)dev_id;
+	struct stm32bb_priv *priv = netdev_priv(net);
+
+	printk("tik\n");
+	/* Wake-up sleeping task */
+	atomic_set(&priv->transfer_ready, 1);
+	wake_up_interruptible(&priv->spi_wait);
 
 	return IRQ_HANDLED;
 }
@@ -1146,15 +1187,25 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 
 	INIT_WORK(&priv->tx_work, stm32bb_tx_work_handler);
 	INIT_WORK(&priv->irq_work, stm32bb_irq_work_handler);
+	init_waitqueue_head(&priv->spi_wait);
+	atomic_set(&priv->transfer_ready, 0);
 
 	/* Configure the SPI bus */
 	spi->mode = SPI_MODE_0;
 	if (stm32bb_spi_speed != 0) {
 		spi->max_speed_hz = stm32bb_spi_speed * 1000;
 	}
+
 	dev_info(&spi->dev, "SPI speed = %d Hz\n", spi->max_speed_hz);
 	spi->bits_per_word = 8;
 	spi_setup(spi);
+
+	ret = request_irq(pdata->transfer_ready, stm32bb_transfer_ready_isr, IRQF_TRIGGER_FALLING,
+		DEVICE_NAME "_dr", spi);
+	if (ret) {
+		dev_err(&spi->dev, "failed to acquire irq %d\n", spi->irq);
+		goto trans_error_probe;
+	}
 
 	if (!stm32bb_hw_probe(spi)) {
 		dev_info(&spi->dev, "Probe failed\n");
@@ -1162,8 +1213,8 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 	}
 
 	/* Register ISR */
-	ret = request_irq(spi->irq, stm32bb_can_isr,
-			  IRQF_TRIGGER_FALLING, DEVICE_NAME, net);
+	ret = request_irq(spi->irq, stm32bb_can_isr, IRQF_TRIGGER_FALLING,
+		DEVICE_NAME "_irq", net);
 	if (ret) {
 		dev_err(&spi->dev, "failed to acquire irq %d\n", spi->irq);
 		goto error_probe;
@@ -1207,6 +1258,8 @@ sys_failed:
 ac_failed:
 	free_irq(spi->irq, net);
 error_probe:
+	free_irq(pdata->transfer_ready, net);
+trans_error_probe:
 	if (!stm32bb_enable_dma)
 		kfree(priv->spi_rx_buf);
 error_rx_buf:
@@ -1226,6 +1279,7 @@ error_out:
 static int __devexit stm32bb_can_remove(struct spi_device *spi)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
+	struct stm32bb_platform_data *pdata = spi->dev.platform_data;
 	struct net_device *net = priv->net;
 
 	unregister_candev(net);
@@ -1235,6 +1289,7 @@ static int __devexit stm32bb_can_remove(struct spi_device *spi)
 	power_supply_unregister(&stm32bb_ac);
 	power_supply_unregister(&stm32bb_sys);
 	power_supply_unregister(&stm32bb_bat);
+	free_irq(pdata->transfer_ready, net);
 	free_irq(spi->irq, net);
 
 	priv->force_quit = 1;
@@ -1317,6 +1372,6 @@ module_init(stm32bb_can_init);
 module_exit(stm32bb_can_exit);
 
 MODULE_AUTHOR("Pavol Jusko, "
-	      "Michal demin");
-MODULE_DESCRIPTION("Our STM32-based CAN Controller");
+	      "Michal Demin");
+MODULE_DESCRIPTION("STM32-based CAN Controller");
 MODULE_LICENSE("GPL v2");
