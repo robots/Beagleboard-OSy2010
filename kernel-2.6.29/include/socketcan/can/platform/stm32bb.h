@@ -18,8 +18,7 @@
 
 struct stm32bb_platform_data {
 	int (*board_specific_setup)(struct spi_device *spi);
-	int (*transceiver_enable)(int enable);
-	int (*power_enable) (int enable);
+	int data_ready;
 };
 
 #endif /* __CAN_PLATFORM_MCP251X_H__ */

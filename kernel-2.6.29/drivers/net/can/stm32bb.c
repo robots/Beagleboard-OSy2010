@@ -540,7 +540,6 @@ static int stm32bb_open(struct net_device *net)
 {
 	struct stm32bb_priv *priv = netdev_priv(net);
 	struct spi_device *spi = priv->spi;
-	struct stm32bb_platform_data *pdata = spi->dev.platform_data;
 	int ret;
 
 	ret = open_candev(net);
@@ -548,9 +547,6 @@ static int stm32bb_open(struct net_device *net)
 		dev_err(&spi->dev, "unable to set initial baudrate!\n");
 		return ret;
 	}
-
-	if (pdata->transceiver_enable)
-		pdata->transceiver_enable(1);
 
 	priv->force_quit = 0;
 	priv->tx_skb = NULL;
@@ -567,7 +563,6 @@ static int stm32bb_stop(struct net_device *net)
 {
 	struct stm32bb_priv *priv = netdev_priv(net);
 	struct spi_device *spi = priv->spi;
-	struct stm32bb_platform_data *pdata = spi->dev.platform_data;
 
 	close_candev(net);
 
@@ -578,9 +573,6 @@ static int stm32bb_stop(struct net_device *net)
 		stm32bb_clean(net);
 
 	stm32bb_can_sleep(spi);
-
-	if (pdata->transceiver_enable)
-		pdata->transceiver_enable(0);
 
 	return 0;
 }
@@ -757,7 +749,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 			/* Data in FIFO0 */
 			if (intf & SYS_INT_CANRX0IF) {
-//dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs\n", (can_status >> 8) & 0x0f);
+dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs status = %d\n", (can_status >> 8) & 0x0f, can_status);
 				// be sure to eat up all messages
 				for (i = 0; i < ((can_status >> 8) & 0x0f); i++)
 					stm32bb_hw_rx(spi, 0);
@@ -765,7 +757,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 			/* Message TX interrupt  */
 			if (intf & SYS_INT_CANTXIF) {
-//dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
+dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
 				if (can_status & CAN_STAT_ALST) {
 					priv->can.can_stats.arbitration_lost++;
 					dev_warn(&spi->dev, "Arbitration lost !\n");
@@ -1177,9 +1169,6 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 		goto error_probe;
 	}
 
-	if (pdata->transceiver_enable)
-		pdata->transceiver_enable(0);
-
 	stm32bb_pwr_setup(priv);
 	/* sync with hw */
 	priv->pwr_iset.i_bat = 0;
@@ -1266,7 +1255,6 @@ static int __devexit stm32bb_can_remove(struct spi_device *spi)
 #ifdef CONFIG_PM
 static int stm32bb_can_suspend(struct spi_device *spi, pm_message_t state)
 {
-	struct stm32bb_platform_data *pdata = spi->dev.platform_data;
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	struct net_device *net = priv->net;
 
@@ -1274,8 +1262,6 @@ static int stm32bb_can_suspend(struct spi_device *spi, pm_message_t state)
 		netif_device_detach(net);
 		
 		stm32bb_can_sleep(spi);
-		if (pdata->transceiver_enable)
-			pdata->transceiver_enable(0);
 		priv->after_suspend = AFTER_SUSPEND_UP;
 	} else {
 		priv->after_suspend = AFTER_SUSPEND_DOWN;
@@ -1286,13 +1272,10 @@ static int stm32bb_can_suspend(struct spi_device *spi, pm_message_t state)
 
 static int stm32bb_can_resume(struct spi_device *spi)
 {
-	struct stm32bb_platform_data *pdata = spi->dev.platform_data;
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	struct net_device *net = priv->net;
 
 	if (priv->after_suspend & AFTER_SUSPEND_UP) {
-		if (pdata->transceiver_enable)
-			pdata->transceiver_enable(1);
 		netif_device_attach(net);
 		queue_work(priv->wq, &priv->irq_work);
 	} else {

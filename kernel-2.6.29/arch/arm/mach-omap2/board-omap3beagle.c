@@ -322,15 +322,19 @@ static int __init omap3_beagle_i2c_init(void)
 /* SPI */
 static int stm32bb_setup(struct spi_device *spi)
 {
+	/* irq pin */
 	gpio_request(157, "stm32bb_irq");
 	gpio_direction_input(157);
+
+	/* data ready pin */
+	gpio_request(140, "stm32bb_dr");
+	gpio_direction_input(140);
 	return 0;
 }
 
 static struct stm32bb_platform_data stm32bb_info = {
 	.board_specific_setup	= &stm32bb_setup,
-	.power_enable		= NULL,
-	.transceiver_enable	= NULL,
+	.data_ready			= OMAP_GPIO_IRQ(140)
 };
 
 static struct spi_board_info beagle_spi_board_info[] = {
