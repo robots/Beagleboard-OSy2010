@@ -88,7 +88,6 @@ int main(void)
 	__enable_irq();
 
 	while (1) {
-		SPI1_Worker();
 		CANController_Worker();
 	}
 }

@@ -54,7 +54,7 @@ struct can_timing_t {
 #define CAN_MSG_SIZE  0x0F // DLC[0:3]
 #define CAN_MSG_RTR   0x10 // RTR[4]
 #define CAN_MSG_EID   0x20 // EID[5]
-#define CAN_MSG_INV   0x40 // is message in-valid
+#define CAN_MSG_INV   0x40 // is message invalid
 
 struct can_message_t {
 	uint8_t flags;
@@ -63,8 +63,7 @@ struct can_message_t {
 } __attribute__ ((packed));
 
 void CANController_Init(void);
-void CANController_Rx1Handle(void);
-void CANController_Rx0Handle(void);
+uint8_t CANController_Rx0Handle(void);
 void CANController_TxHandle(void);
 void CANController_ControlHandle(void);
 void CANController_TimingHandle(void);
@@ -79,6 +78,12 @@ extern volatile struct can_timing_t CANController_Timing;
 extern volatile struct can_message_t *CANController_RX0;
 extern volatile struct can_message_t *CANController_RX1;
 extern volatile struct can_message_t *CANController_TX;
+
+#include "canbuf.h"
+
+
+extern struct can_buffer_t CANController_RX0Buffer0;
+extern struct can_buffer_t CANController_RX0Buffer1;
 
 #endif
 

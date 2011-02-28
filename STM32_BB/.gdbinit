@@ -10,8 +10,9 @@ monitor gdb_breakpoint_override hard
 monitor soft_reset_halt
 
 # enable debug mode
-break main
+break NVIC_Configuration
 continue
+monitor jtag_khz 5000
 set variable DEBUG_ON = 1
 del 1
 

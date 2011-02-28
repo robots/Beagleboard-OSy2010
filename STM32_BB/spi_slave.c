@@ -1,7 +1,7 @@
 /*
  * SPI Slave driver for STM32 family processors
  *
- * 2010 Michal Demin
+ * 2010-2011 Michal Demin
  *
  */
 
@@ -11,50 +11,18 @@
 #include "cancontroller.h"
 #include "power.h"
 #include "sys.h"
+#include "canbuf.h"
 
 #include "commands.h"
 #include "spi_slave.h"
 
-typedef void (*DMA_Callback_t)();
-
-/* number of pending handlers to be executed */
-#define DMA_QUEUE_SIZE      (5)
-/* needs to be highest priority */
-#define DMA_WORKER_PRIORITY (1)
-
-// bit-band regions 
-#define DMA1CH2EN (*((volatile unsigned long *) 0x42400380))
-#define DMA1CH2GL (*((volatile unsigned long *) 0x42400090))
-#define DMA1CH3EN (*((volatile unsigned long *) 0x42400600))
-#define DMA1CH3GL (*((volatile unsigned long *) 0x424000A0))
-
-#define SPI1TXEI  (*((volatile unsigned long *) 0x4226009C))
-#define SPI1RXNEI (*((volatile unsigned long *) 0x42260098))
-
-
-// have the Callbacks run from DMA ISR
-#define DMA_CB_ISR 1
-
-enum {
-	SPI1_CMD,
-	SPI1_DATA
-};
-
-/* specifies what dma transfer is finishing next */
-volatile uint8_t SPI1_DMA_Type = SPI1_CMD;
-
-/* command received */
-volatile uint8_t SPI1_Cmd;
-volatile uint8_t dummy;
-volatile uint8_t SPI1_Stat;
-
 // temporary buffer to save interrupt flag and others
 volatile uint32_t SPI1_TX_Tmp;
 
+volatile uint8_t dummy;
+
 /* callback */
 DMA_Callback_t DMA_Callback = NULL;
-volatile DMA_Callback_t DMA_Callback_Run = NULL;
-
 
 void SPI1_Slave_Init() {
 	SPI_InitTypeDef  SPIConf;
@@ -79,7 +47,7 @@ void SPI1_Slave_Init() {
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
-	
+
 	// MISO
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; // alt. fnc. push-pull
@@ -87,12 +55,17 @@ void SPI1_Slave_Init() {
 
 	// CLK
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input 
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	// NSS
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING; // input
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	// DR
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD; // out open drain
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
 	SPIConf.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
@@ -135,13 +108,6 @@ void SPI1_Slave_Init() {
 	DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 	DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
 
-
-	// enable RX DMA - bootstrap
-	DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
-	DMA1_Channel2->CNDTR = sizeof(SPI1_Cmd);
-
-	DMA_Cmd(DMA1_Channel2, ENABLE);
-
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
@@ -152,226 +118,201 @@ void SPI1_Slave_Init() {
 	NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel3_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
-	// spi1 ISR does not rely on FreeRTOS api - can be higher priority
+	// spi1 ISR
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 10;
 	NVIC_InitStructure.NVIC_IRQChannel = SPI1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
+	// enable interrupt
+	SPI1RXNEI = 1;
+	SPI1TXEI = 0;
+
 }
 
-void SPI1_Worker()
-{
-#if DMA_CB_ISR == 0
-	if (DMA_Callback_Run != NULL) {
-		DMA_Callback_Run();
-		DMA_Callback_Run = NULL;
+static uint8_t setup_transfer(uint8_t cmd) {
+	uint8_t tmp;
+
+	if (cmd & CMD_WRITE) { // WRITE
+		switch (cmd & 0x7F) {
+			case SYS_INTE:
+				DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptEnable;
+				DMA1_Channel2->CNDTR = sizeof(SYS_InterruptEnable);
+				break;
+			case SYS_INTF:
+				DMA_Callback = SYS_IntFlagWriteHandle;
+				DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptFlag;
+				DMA1_Channel2->CNDTR = sizeof(SYS_InterruptFlag);
+				break;
+			case SYS_RESET:
+				DMA_Callback = SYS_ResetHandler;
+				DMA1_Channel2->CMAR = (uint32_t)&SYS_Reset;
+				DMA1_Channel2->CNDTR = sizeof(SYS_Reset);
+				break;
+			case CAN_TIMING:
+				DMA_Callback = CANController_TimingHandle;
+				DMA1_Channel2->CMAR = (uint32_t)&CANController_Timing;
+				DMA1_Channel2->CNDTR = sizeof(struct can_timing_t);
+				break;
+			case CAN_CTRL:
+				DMA_Callback = CANController_ControlHandle;
+				DMA1_Channel2->CMAR = (uint32_t)&CANController_Control;
+				DMA1_Channel2->CNDTR = sizeof(CANController_Control);
+				break;
+			case CAN_TX:
+				DMA_Callback = CANController_TxHandle;
+				DMA1_Channel2->CMAR = (uint32_t)CANController_TX;
+				DMA1_Channel2->CNDTR = sizeof(struct can_message_t);
+				break;
+			case PWR_CTRL:
+				DMA_Callback = PWR_ControlHandle;
+				DMA1_Channel2->CMAR = (uint32_t)&PWR_Control;
+				DMA1_Channel2->CNDTR = sizeof(PWR_Control);
+				break;
+			case PWR_I_SET:
+				DMA_Callback = PWR_CurrentHandle;
+				DMA1_Channel2->CMAR = (uint32_t)&PWR_I_Set;
+				DMA1_Channel2->CNDTR = sizeof(PWR_I_Set);
+				break;
+			default:
+				// fault - enable spi interrupt
+				SPI1RXNEI = 1;
+				return 0;
+				break;
+		}
+	} else { // READ
+		switch (cmd) {
+			case SYS_INTE:
+				DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptEnable;
+				DMA1_Channel3->CNDTR = sizeof(SYS_InterruptEnable);
+				break;
+			case SYS_INTF:
+				/* interrupt "read and clear" atomic */
+				SPI1_TX_Tmp = SYS_InterruptFlag;
+				SYS_ClrIntFlag(0xffff);
+				/*DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
+				DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);*/
+				DMA1_Channel3->CMAR = (uint32_t)&SPI1_TX_Tmp;
+				DMA1_Channel3->CNDTR = sizeof(SPI1_TX_Tmp);
+				break;
+			case SYS_ID:
+				DMA1_Channel3->CMAR = (uint32_t)&SYS_Identifier;
+				DMA1_Channel3->CNDTR = sizeof(SYS_Identifier);
+				break;
+			case CAN_ERR:
+				DMA1_Channel3->CMAR = (uint32_t)&CANController_Error;
+				DMA1_Channel3->CNDTR = sizeof(CANController_Error);
+				break;
+			case CAN_STATUS:
+				DMA1_Channel3->CMAR = (uint32_t)&CANController_Status;
+				DMA1_Channel3->CNDTR = sizeof(CANController_Status);
+				break;
+			case CAN_CTRL:
+				DMA1_Channel3->CMAR = (uint32_t)&CANController_Control;
+				DMA1_Channel3->CNDTR = sizeof(CANController_Control);
+				break;
+			case CAN_TIMING:
+				DMA1_Channel3->CMAR = (uint32_t)&CANController_Timing;
+				DMA1_Channel3->CNDTR = sizeof(struct can_timing_t);
+				break;
+			case CAN_RX0:
+				// switch buffer, not a callback, needs to be done rightaway
+				tmp = CANController_Rx0Handle();
+				if (tmp == 1) {
+					DMA1_Channel3->CMAR = (uint32_t)&CANController_RX0Buffer0;
+				} else {
+					DMA1_Channel3->CMAR = (uint32_t)&CANController_RX0Buffer1;
+				}
+				DMA1_Channel3->CNDTR = sizeof(struct can_message_t) * CAN_BUFFER_SIZE;
+				break;
+			case PWR_STATUS:
+				DMA1_Channel3->CMAR = (uint32_t)&PWR_Status;
+				DMA1_Channel3->CNDTR = sizeof(PWR_Status);
+				break;
+			case PWR_CTRL:
+				DMA1_Channel3->CMAR = (uint32_t)&PWR_Control;
+				DMA1_Channel3->CNDTR = sizeof(PWR_Control);
+				break;
+			case PWR_I_SET:
+				DMA1_Channel3->CMAR = (uint32_t)&PWR_I_Set;
+				DMA1_Channel3->CNDTR = sizeof(PWR_I_Set);
+				break;
+			case PWR_DATA:
+				DMA1_Channel3->CMAR = (uint32_t)&PWR_Measurement_Data;
+				DMA1_Channel3->CNDTR = sizeof(PWR_Measurement_Data);
+				break;
+			default:
+				// fault - enable spi interrupt
+				SPI1RXNEI = 1;
+				return 0;
+				break;
+		}
 	}
-#endif
+	return 1;
 }
 
 void SPI1_IRQHandler(void) {
 	// clear the RXNE bits
-	dummy = SPI1->DR;
+	static uint8_t cmd;
+	static uint8_t ret;
 
-	if ((SPI1_DMA_Type == SPI1_CMD) || (SPI1_Cmd & CMD_WRITE)) {
-		// enable RX DMA
-		DMA1CH2EN = 1;
-	} else {
-		// enable TX DMA
-		DMA1CH3EN = 1;
-	}
-	// disable interrupt
+	cmd = SPI1->DR;
+
+	// disable spi interrupt
 	SPI1RXNEI = 0;
-	SPI1TXEI = 0;
+
+	//setup dma transfer
+	ret = setup_transfer(cmd);
+	if (ret) {
+		if (cmd & CMD_WRITE) {
+			// enable RX DMA
+			DMA1CH2EN = 1;
+		} else {
+			// enable TX DMA
+			DMA1CH3EN = 1;
+		}
+	}
+
+	// tell host that transfer is ready
+	SPI_DR_WRITE(Bit_RESET);
 }
 
-/* ISR for DMA1 Channel2 */ 
+/* ISR for DMA1 Channel2 */
 void DMA1_Channel2_IRQHandler(void) {
-
 	// disable DMA
 	DMA1CH2EN = 0;
 	// clear int pending bit on DMA2
 	DMA1CH2GL = 1;
 
-	if (SPI1_DMA_Type == SPI1_DATA) {
-		DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
-		DMA1_Channel2->CNDTR = 1;
-		DMA1CH2EN = 1;
+	// enable SPI rx interrupt
+	dummy = SPI1->DR;
+	SPI1RXNEI = 1;
 
-#if DMA_CB_ISR
-		if (DMA_Callback) {
-			DMA_Callback();
-			DMA_Callback = NULL;
-		}
-#else
-		DMA_Callback_Run = DMA_Callback;
+	// clear flag
+	SPI_DR_WRITE(Bit_SET);
+
+	if (DMA_Callback) {
+		DMA_Callback();
 		DMA_Callback = NULL;
-#endif
-
-		SPI1_DMA_Type = SPI1_CMD; // next is command
-	} else {
-		SPI1_DMA_Type = SPI1_DATA; // data is next
-
-		// we have time to setup another trancation
-		if (SPI1_Cmd & CMD_WRITE) { // WRITE 
-			SPI1RXNEI = 1;
-			switch (SPI1_Cmd & 0x7F) {
-				case SYS_INTE:
-					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptEnable;
-					DMA1_Channel2->CNDTR = sizeof(SYS_InterruptEnable);
-					break;
-				case SYS_INTF:
-					DMA_Callback = SYS_IntFlagWriteHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptFlag;
-					DMA1_Channel2->CNDTR = sizeof(SYS_InterruptFlag);
-					break;
-				case SYS_RESET:
-					DMA_Callback = SYS_ResetHandler;
-					DMA1_Channel2->CMAR = (uint32_t)&SYS_Reset;
-					DMA1_Channel2->CNDTR = sizeof(SYS_Reset);
-					break;
-				case CAN_TIMING:
-					DMA_Callback = CANController_TimingHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&CANController_Timing;
-					DMA1_Channel2->CNDTR = sizeof(struct can_timing_t);
-					break;
-				case CAN_CTRL:
-					DMA_Callback = CANController_ControlHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&CANController_Control;
-					DMA1_Channel2->CNDTR = sizeof(CANController_Control);
-					break;
-				case CAN_TX:
-					DMA_Callback = CANController_TxHandle;
-					DMA1_Channel2->CMAR = (uint32_t)CANController_TX;
-					DMA1_Channel2->CNDTR = sizeof(struct can_message_t);
-					break;
-				case PWR_CTRL:
-					DMA_Callback = PWR_ControlHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&PWR_Control;
-					DMA1_Channel2->CNDTR = sizeof(PWR_Control);
-					break;
-				case PWR_I_SET:
-					DMA_Callback = PWR_CurrentHandle;
-					DMA1_Channel2->CMAR = (uint32_t)&PWR_I_Set;
-					DMA1_Channel2->CNDTR = sizeof(PWR_I_Set);
-					break;
-				default:
-					// fault ... receive command byte again
-					SPI1_DMA_Type = SPI1_CMD;
-					DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
-					DMA1_Channel2->CNDTR = 1;
-
-					DMA1CH2EN = 1;
-					SPI1TXEI = 0;
-					SPI1RXNEI = 0;
-					break;
-			}
-		} else { // READ
-			// put something in the tx fifo, this ensures that TXE flag is cleared
-			SPI1->DR = 0x55;
-			// enable SPI tx empty interrupt
-			SPI1TXEI = 1;
-
-			switch (SPI1_Cmd) {
-				case SYS_INTE:
-					DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptEnable;
-					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptEnable);
-					break;
-				case SYS_INTF:
-					/* interrupt "read and clear" atomic */
-					SPI1_TX_Tmp = SYS_InterruptFlag;
-					SYS_ClrIntFlag(0xffff);
-					/*DMA1_Channel3->CMAR = (uint32_t)&SYS_InterruptFlag;
-					DMA1_Channel3->CNDTR = sizeof(SYS_InterruptFlag);*/
-					DMA1_Channel3->CMAR = (uint32_t)&SPI1_TX_Tmp;
-					DMA1_Channel3->CNDTR = sizeof(SPI1_TX_Tmp);
-					break;
-				case SYS_ID:
-					DMA1_Channel3->CMAR = (uint32_t)&SYS_Identifier;
-					DMA1_Channel3->CNDTR = sizeof(SYS_Identifier);
-					break;
-				case CAN_ERR:
-					DMA1_Channel3->CMAR = (uint32_t)&CANController_Error;
-					DMA1_Channel3->CNDTR = sizeof(CANController_Error);
-					break;
-				case CAN_STATUS:
-					DMA1_Channel3->CMAR = (uint32_t)&CANController_Status;
-					DMA1_Channel3->CNDTR = sizeof(CANController_Status);
-					break;
-				case CAN_CTRL:
-					DMA1_Channel3->CMAR = (uint32_t)&CANController_Control;
-					DMA1_Channel3->CNDTR = sizeof(CANController_Control);
-					break;
-				case CAN_TIMING:
-					DMA1_Channel3->CMAR = (uint32_t)&CANController_Timing;
-					DMA1_Channel3->CNDTR = sizeof(struct can_timing_t);
-					break;
-				case CAN_RX0:
-					DMA_Callback = CANController_Rx0Handle;
-					DMA1_Channel3->CMAR = (uint32_t)CANController_RX0;
-					DMA1_Channel3->CNDTR = sizeof(struct can_message_t);
-					break;
-				case PWR_STATUS:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Status;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Status);
-					break;
-				case PWR_CTRL:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Control;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Control);
-					break;
-				case PWR_I_SET:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_I_Set;
-					DMA1_Channel3->CNDTR = sizeof(PWR_I_Set);
-					break;
-				case PWR_DATA:
-					DMA1_Channel3->CMAR = (uint32_t)&PWR_Measurement_Data;
-					DMA1_Channel3->CNDTR = sizeof(PWR_Measurement_Data);
-					break;
-				default:
-					// fault ... receive command byte again
-					SPI1_DMA_Type = SPI1_CMD;
-					DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
-					DMA1_Channel2->CNDTR = 1;
-
-					DMA1CH2EN = 1;
-					SPI1TXEI = 0;
-					SPI1RXNEI = 0;
-					break;
-			}
-		}
 	}
 }
 
 /* ISR for DMA1 Channel3 */
 void DMA1_Channel3_IRQHandler(void) {
-
-	// disable DMA Channel 
+	// disable DMA Channel
 	DMA1CH3EN = 0;
 	// clear int pending bit
 	DMA1CH3GL = 1;
 
-	SPI1TXEI = 1;
-
-	// read - to clear RXNE flag
-	// enabled DMA1_Channel2 would read this data, and we don't like that
+	// enable SPI rx interrupt
 	dummy = SPI1->DR;
+	SPI1RXNEI = 1;
 
-	// send data to worker thread
-#if DMA_CB_ISR
+	// clear flag
+	SPI_DR_WRITE(Bit_SET);
+
 	if (DMA_Callback) {
 		DMA_Callback();
 		DMA_Callback = NULL;
 	}
-#else
-	DMA_Callback_Run = DMA_Callback;
-	DMA_Callback = NULL;
-#endif
-
-	// awaiting command in next transfer
-	SPI1_DMA_Type = SPI1_CMD;
-
-	// setup dma to receive command
-	DMA1_Channel2->CMAR = (uint32_t)&SPI1_Cmd;
-	DMA1_Channel2->CNDTR = 1;
 }
 

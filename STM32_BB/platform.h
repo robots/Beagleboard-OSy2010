@@ -19,6 +19,9 @@
 #define SPI_INT_PIN        GPIO_Pin_8
 #define SPI_INT_GPIO       GPIOA
 
+#define SPI_DR_PIN         GPIO_Pin_9
+#define SPI_DR_GPIO        GPIOA
+
 #define PWR_ENABLE_PIN     GPIO_Pin_7
 #define PWR_ENABLE_GPIO    GPIOB
 
@@ -36,6 +39,7 @@
 #define LED_RED(x)         GPIO_WriteBit(LED_RED_GPIO, LED_RED_PIN, x)
 
 #define SPI_INT_WRITE(x)   GPIO_WriteBit(SPI_INT_GPIO, SPI_INT_PIN, x)
+#define SPI_DR_WRITE(x)    GPIO_WriteBit(SPI_DR_GPIO, SPI_DR_PIN, x)
 
 #define PWR_ENABLE(x)      GPIO_WriteBit(PWR_ENABLE_GPIO, PWR_ENABLE_PIN, x)
 #define PWR_ACSEL(x)       GPIO_WriteBit(PWR_ACSEL_GPIO, PWR_ACSEL_PIN, x)

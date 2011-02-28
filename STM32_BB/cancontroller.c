@@ -13,9 +13,6 @@
 
 #include "cancontroller.h"
 
-// use optimistic update of can messages count in Status reg
-#define CAN_UPDATE_OPTIMISTIC 1
-
 volatile uint16_t CANController_Status = 0x0000;
 volatile uint16_t CANController_Control = 0x0000;
 volatile uint16_t CANController_Control_Last = 0x0000;
@@ -24,12 +21,14 @@ volatile uint32_t CANController_Error_Last = 0x0000;
 
 volatile struct can_timing_t CANController_Timing;
 
-volatile struct can_message_t *CANController_RX0;
 volatile uint16_t RX0_Count = 0;
 volatile struct can_message_t CANController_TXBuffer;
 volatile struct can_message_t *CANController_TX;
 
-struct can_buffer_t CANController_RX0Buffer;
+struct can_buffer_t *CANController_RX0Buffer;
+struct can_buffer_t CANController_RX0Buffer0;
+struct can_buffer_t CANController_RX0Buffer1;
+uint8_t CANController_RX0Active = 0;
 
 static CAN_FilterInitTypeDef CAN_FilterInitStructure = {
 	.CAN_FilterNumber = 0,
@@ -51,8 +50,10 @@ void CANController_Init(void) {
 		.GPIO_Speed = GPIO_Speed_50MHz,
 	};
 
-	CANBuf_Init(&CANController_RX0Buffer);
-	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
+	CANBuf_Init(&CANController_RX0Buffer0);
+	CANBuf_Init(&CANController_RX0Buffer1);
+	CANController_RX0Active = 0;
+	CANController_RX0Buffer = &CANController_RX0Buffer0;
 
 	CANController_TX = &CANController_TXBuffer;
 
@@ -100,7 +101,7 @@ static void CANController_HW_Reinit(int first) {
 	//CAN1->IER = 0x00008F13; // enable all interrupts (except FIFOx full/overrun, sleep/wakeup)
 	CAN1->IER = CAN_IER_TMEIE | CAN_IER_FMPIE0;
 	CAN1->IER |= CAN_IER_EWGIE | CAN_IER_EPVIE | CAN_IER_BOFIE | CAN_IER_LECIE;
-//	CAN1->IER |= CAN_IER_ERRIE; 
+//	CAN1->IER |= CAN_IER_ERRIE;  // TODO: test me
 
 	if (!first) {
 		// enter the init mode
@@ -137,27 +138,24 @@ void CANController_Worker() {
 	}
 }
 
-/* message has been read from RX0, shift the buffer */
-void CANController_Rx0Handle(void) {
-	// reading more than we have?
-	// this would cause the ring buffer to advance read pointer
-	// and would need at last CAN_BUFFER_SIZE messages to sync again
-	if (CANController_RX0->flags & CAN_MSG_INV)
-		return;
+uint8_t CANController_Rx0Handle(void) {
+	struct can_buffer_t *canbuf;
 
-	CANController_RX0->flags |= CAN_MSG_INV;
-	CANBuf_ReadDone(&CANController_RX0Buffer);
-	CANController_RX0 = CANBuf_GetReadAddr(&CANController_RX0Buffer);
+	if (CANController_RX0Active == 0) {
+		canbuf = &CANController_RX0Buffer0;
+	} else {
+		canbuf = &CANController_RX0Buffer1;
+	}
+	CANController_RX0Active = !CANController_RX0Active;
 
-	/* update status register */
-#if CAN_UPDATE_OPTIMISTIC
-	//RX0_Count = (CANController_Status & CAN_STAT_RX0) >> 8;
-	if (RX0_Count > 0) RX0_Count -= 1;
-#else
-	RX0_Count = CANBuf_GetAvailable(&CANController_RX0Buffer);
-#endif
+	// invalidate buffer
+	CANBuf_Init(canbuf);
+
+	CANController_RX0Buffer = canbuf;
+	RX0_Count = 0;
 	CANController_Status &= ~CAN_STAT_RX0;
-	CANController_Status |= (RX0_Count << 8) & CAN_STAT_RX0;
+
+	return CANController_RX0Active; 
 }
 
 /* new message to be transmitted */
@@ -332,7 +330,7 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 void USB_LP_CAN1_RX0_IRQHandler(void) {
 	static struct can_message_t *RX0;
 
-	RX0 = CANBuf_GetWriteAddr(&CANController_RX0Buffer);
+	RX0 = CANBuf_GetWriteAddr(CANController_RX0Buffer);
 	RX0->flags = 0x00;
 
 	// check RTR
@@ -366,20 +364,13 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 	// release fifo
 	CAN1->RF0R = CAN_RF0R_RFOM0;
 
-	if (CANBuf_Empty(&CANController_RX0Buffer)) {
-		CANController_RX0 = RX0;
-	}
-
 	// Advance the ring buffer
-	CANBuf_WriteDone(&CANController_RX0Buffer);
+	CANBuf_WriteDone(CANController_RX0Buffer);
 
 	// update Status
-#if CAN_UPDATE_OPTIMISTIC
-	//RX0_Count = (CANController_Status & CAN_STAT_RX0) >> 8;
-	if (RX0_Count < CAN_BUFFER_SIZE) RX0_Count += 1;
-#else
-	RX0_Count = CANBuf_GetAvailable(&CANController_RX0Buffer);
-#endif
+	if (RX0_Count < CAN_BUFFER_SIZE)
+		RX0_Count += 1;
+
 	CANController_Status &= ~CAN_STAT_RX0;
 	CANController_Status |= (RX0_Count << 8) & CAN_STAT_RX0;
 
