@@ -13,7 +13,7 @@
 
 #include "platform.h"
 
-volatile uint32_t DEBUG_ON = 2;
+volatile uint32_t DEBUG_ON = 1;
 
 #ifdef VECT_TAB_RAM
 /* vector-offset (TBLOFF) from bottom of SRAM. defined in linker script */
@@ -29,6 +29,7 @@ void NVIC_Configuration(void)
 {
 	// Set the Vector Table base location at 0x08000000+_isr_vectorsflash_offs
 	NVIC_SetVectorTable(NVIC_VectTab_FLASH, (uint32_t)&_isr_vectorsflash_offs);
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
 }
 #endif /* VECT_TAB_RAM */
 
@@ -88,6 +89,5 @@ int main(void)
 	__enable_irq();
 
 	while (1) {
-		CANController_Worker();
 	}
 }

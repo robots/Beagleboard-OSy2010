@@ -17,7 +17,7 @@
 #include "spi_slave.h"
 
 // temporary buffer to save interrupt flag and others
-volatile uint32_t SPI1_TX_Tmp;
+volatile uint16_t SPI1_TX_Tmp;
 
 volatile uint8_t dummy;
 
@@ -94,7 +94,7 @@ void SPI1_Slave_Init() {
 	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
 	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
 	DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
-	DMA_InitStructure.DMA_Priority = DMA_Priority_Medium;
+	DMA_InitStructure.DMA_Priority = DMA_Priority_High;
 	DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
 
 	// Init DMA Channel (MEM->SPI)
@@ -108,7 +108,7 @@ void SPI1_Slave_Init() {
 	DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 	DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
 
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 
@@ -118,8 +118,13 @@ void SPI1_Slave_Init() {
 	NVIC_InitStructure.NVIC_IRQChannel = DMA1_Channel3_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
+	// clear flag
+	SPI_DR_WRITE(Bit_SET);
+
+
 	// spi1 ISR
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 10;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
 	NVIC_InitStructure.NVIC_IRQChannel = SPI1_IRQn;
 	NVIC_Init(&NVIC_InitStructure);
 
@@ -203,6 +208,7 @@ static uint8_t setup_transfer(uint8_t cmd) {
 				DMA1_Channel3->CNDTR = sizeof(CANController_Error);
 				break;
 			case CAN_STATUS:
+				CANController_StatusHandle();
 				DMA1_Channel3->CMAR = (uint32_t)&CANController_Status;
 				DMA1_Channel3->CNDTR = sizeof(CANController_Status);
 				break;
@@ -251,7 +257,6 @@ static uint8_t setup_transfer(uint8_t cmd) {
 }
 
 void SPI1_IRQHandler(void) {
-	// clear the RXNE bits
 	static uint8_t cmd;
 	static uint8_t ret;
 
@@ -270,10 +275,10 @@ void SPI1_IRQHandler(void) {
 			// enable TX DMA
 			DMA1CH3EN = 1;
 		}
-	}
 
-	// tell host that transfer is ready
-	SPI_DR_WRITE(Bit_RESET);
+		// tell host that transfer is ready
+		SPI_DR_WRITE(Bit_RESET);
+	}
 }
 
 /* ISR for DMA1 Channel2 */

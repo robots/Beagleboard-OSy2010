@@ -113,8 +113,8 @@ void PWR_Init() {
 	EXTI_Init(&EXTI_InitStructure);
 
 	// enable interrupt at NVIC
-	EXT_Int.NVIC_IRQChannelPreemptionPriority = 15;
-	EXT_Int.NVIC_IRQChannelSubPriority = 0;
+	EXT_Int.NVIC_IRQChannelPreemptionPriority = 0;
+	EXT_Int.NVIC_IRQChannelSubPriority = 10;
 //	EXT_Int.NVIC_IRQChannelCmd = ENABLE;
 
 	// setup PWR_Status to show actual state of EXTI pins ?

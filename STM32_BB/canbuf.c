@@ -71,4 +71,7 @@ void CANBuf_WriteDone(struct can_buffer_t *b) {
 	if (((b->write + 1) % CAN_BUFFER_SIZE) == b->read) {
 		return;
 	}
+
+	b->write ++;
+	b->write %= CAN_BUFFER_SIZE;
 }

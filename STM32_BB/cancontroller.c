@@ -69,8 +69,8 @@ void CANController_Init(void) {
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	CAN_Int.NVIC_IRQChannelPreemptionPriority = 14;
-	CAN_Int.NVIC_IRQChannelSubPriority = 0;
+	CAN_Int.NVIC_IRQChannelPreemptionPriority = 0;
+	CAN_Int.NVIC_IRQChannelSubPriority = 5;
 
 	CANController_Control_Last = 0;
 	CANController_Control = 0;
@@ -131,20 +131,20 @@ static void CANController_HW_Reinit(int first) {
 
 }
 
-/* This should be periodicaly called */
-void CANController_Worker() {
+void CANController_StatusHandle() {
 	if ((CAN1->MSR & CAN_MSR_INAK) && (CAN1->MCR & CAN_MCR_INRQ)) {
 		CANController_Status |= CAN_STAT_INAK;
 	}
+	CANController_Status |= CAN_STAT_RX1;
 }
 
 uint8_t CANController_Rx0Handle(void) {
 	struct can_buffer_t *canbuf;
 
 	if (CANController_RX0Active == 0) {
-		canbuf = &CANController_RX0Buffer0;
-	} else {
 		canbuf = &CANController_RX0Buffer1;
+	} else {
+		canbuf = &CANController_RX0Buffer0;
 	}
 	CANController_RX0Active = !CANController_RX0Active;
 
@@ -153,7 +153,7 @@ uint8_t CANController_Rx0Handle(void) {
 
 	CANController_RX0Buffer = canbuf;
 	RX0_Count = 0;
-	CANController_Status &= ~CAN_STAT_RX0;
+	CANController_Status &= ~(CAN_STAT_RX0 | CAN_STAT_RXOV);
 
 	return CANController_RX0Active; 
 }
@@ -368,8 +368,11 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 	CANBuf_WriteDone(CANController_RX0Buffer);
 
 	// update Status
-	if (RX0_Count < CAN_BUFFER_SIZE)
+	if (RX0_Count < CAN_BUFFER_SIZE) {
 		RX0_Count += 1;
+	} else {
+		CANController_Status |= CAN_STAT_RXOV;
+	}
 
 	CANController_Status &= ~CAN_STAT_RX0;
 	CANController_Status |= (RX0_Count << 8) & CAN_STAT_RX0;
