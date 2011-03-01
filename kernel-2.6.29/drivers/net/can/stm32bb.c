@@ -51,9 +51,9 @@
  * Buffer size required for the largest SPI transfer (i.e., reading a
  * frame)
  */
-#define CAN_FRAME_MAX_DATA_LEN	8
-#define SPI_TRANSFER_BUF_LEN	(6 + CAN_FRAME_MAX_DATA_LEN)
-#define CAN_FRAME_MAX_BITS	128
+#define CAN_MESSAGE_SIZE 13
+#define CAN_BUFFER_SIZE 16
+#define SPI_TRANSFER_BUF_LEN	(CAN_MESSAGE_SIZE * CAN_BUFFER_SIZE)
 
 #define TX_ECHO_SKB_MAX	1
 
@@ -91,17 +91,16 @@ struct stm32bb_priv {
 
 	struct sk_buff *tx_skb;
 	int tx_len;
-	atomic_t transfer_ready;
+	atomic_t data_ready;
 	struct workqueue_struct *wq;
-	wait_queue_head_t	spi_wait;
 	struct work_struct tx_work;
 	struct work_struct irq_work;
+	wait_queue_head_t spi_wait;
 
 	int force_quit;
 	int after_suspend;
 #define AFTER_SUSPEND_UP 1
 #define AFTER_SUSPEND_DOWN 2
-//#define AFTER_SUSPEND_RESTART 8
 	int restart_tx;
 	struct stm32bb_pwr_t pwr_data;
 	struct stm32bb_iset_t pwr_iset;
@@ -110,18 +109,14 @@ struct stm32bb_priv {
 /*
  * low level HW functions 
  */
-static void stm32bb_spi_dummy_cb(void *dummy)
-{
-}
-
 static int stm32bb_spi_trans(struct spi_device *spi, uint8_t cmd, int len)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	struct spi_transfer t = {
 		.tx_buf = priv->spi_tx_buf,
 		.rx_buf = priv->spi_rx_buf,
-		.len = len,
 		.cs_change = 0,
+		.len = 1,
 	};
 	struct spi_message m;
 	uint8_t tmp;
@@ -135,34 +130,28 @@ static int stm32bb_spi_trans(struct spi_device *spi, uint8_t cmd, int len)
 		m.is_dma_mapped = 1;
 	}
 
-	// save the first byte
+	/* replace first byte by cmd */
 	tmp = priv->spi_tx_buf[0];
-
-	// replace by cmd
 	priv->spi_tx_buf[0] = cmd;
-	t.len = 1;
 
 	spi_message_add_tail(&t, &m);
 
-	m.complete = stm32bb_spi_dummy_cb;
-
-	// submit transfer
-	ret = spi_async(spi, &m);
+	/* send message */
+	ret = spi_sync(spi, &m);
 	if (ret) {
 		dev_err(&spi->dev, "spi transfer failed: ret = %d\n", ret);
 		return ret;
 	}
 
-	// wait for interrupt
-	wait_event_interruptible(priv->spi_wait, atomic_read(&priv->transfer_ready));
+	/* wait for transfer ready */
+	wait_event_interruptible(priv->spi_wait, atomic_read(&priv->data_ready));
 
-	if (!atomic_read(&priv->transfer_ready))
+	if (atomic_read(&priv->data_ready) != 1)
 		return -1;
 
-	atomic_set(&priv->transfer_ready, 0);
+	atomic_set(&priv->data_ready, 0);
 
-
-	// return the saved byte
+	/* return saved byte */
 	priv->spi_tx_buf[0] = tmp;
 	t.len = len;
 
@@ -177,10 +166,10 @@ static int stm32bb_spi_trans(struct spi_device *spi, uint8_t cmd, int len)
 	ret = spi_sync(spi, &m);
 	if (ret)
 		dev_err(&spi->dev, "spi transfer failed: ret = %d\n", ret);
+
 	return ret;
 }
 
-// ten buf by mal byt vzdycky minimalne 6 bajt dlhy, takze by nemal nikdy nastat problem
 static uint32_t stm32bb_read_reg(struct spi_device *spi, uint8_t reg, uint8_t len)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
@@ -191,12 +180,15 @@ static uint32_t stm32bb_read_reg(struct spi_device *spi, uint8_t reg, uint8_t le
 
 	stm32bb_spi_trans(spi, reg & 0x3f, len);
 
-	// we receive LSByte first
+	/* we receive LSByte first */
 	val = buf[0];
 	val |= buf[1] << 8;
 	val |= buf[2] << 16;
 	val |= buf[3] << 24;
-//dev_err(&spi->dev, "read_reg(0x%04x, %d) = 0x%08x\n", reg, len, val);
+
+#if 0 
+	dev_info(&spi->dev, "read_reg(0x%04x, %d) -> 0x%08x\n", reg, len, val);
+#endif
 
 	mutex_unlock(&priv->spi_lock);
 
@@ -210,13 +202,16 @@ static void stm32bb_write_reg(struct spi_device *spi, uint8_t reg, uint32_t val,
 
 	mutex_lock(&priv->spi_lock);
 
-	buf[0] = (uint8_t) (0xff & val);
-	buf[1] = (uint8_t) (0xff & (val >> 8));
-	buf[2] = (uint8_t) (0xff & (val >> 16));
-	buf[3] = (uint8_t) (0xff & (val >> 24));
+	buf[0] = val & 0xff;
+	buf[1] = (val >> 8) & 0xff;
+	buf[2] = (val >> 16) & 0xff;
+	buf[3] = (val >> 24) & 0xff;
 
-	stm32bb_spi_trans(spi, reg | CMD_WRITE, len+2);
-//dev_err(&spi->dev, "write_reg(0x%04x, %d) = 0x%08x\n", reg, len, val);
+	stm32bb_spi_trans(spi, reg | CMD_WRITE, len);
+
+#if 0
+	dev_info(&spi->dev, "write_reg(0x%04x, %d) <- 0x%08x\n", reg, len, val);
+#endif
 
 	mutex_unlock(&priv->spi_lock);
 }
@@ -234,6 +229,7 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 
 	/* write flag */
 	buf[0] = rtr << 4 | exide << 5 | (frame->can_dlc & 0x0f);
+
 	/* write ID - LSB first*/
 	buf[1] = frame->can_id & 0xff;
 	buf[2] = (frame->can_id >> 8) & 0xff;
@@ -244,7 +240,7 @@ static void stm32bb_hw_tx(struct spi_device *spi, struct can_frame *frame)
 	memcpy(buf + 5, frame->data, frame->can_dlc);
 
 	/* send frame */
-	stm32bb_spi_trans(spi, CAN_TX | CMD_WRITE, 13);
+	stm32bb_spi_trans(spi, CAN_TX | CMD_WRITE, CAN_MESSAGE_SIZE);
 	mutex_unlock(&priv->spi_lock);
 }
 
@@ -253,21 +249,20 @@ static void stm32bb_hw_rx(struct spi_device *spi)
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 	struct sk_buff *skb;
 	struct can_frame *frame;
-	/* buf points to actuall CAN msg in SPI buffer */
 	uint8_t *buf = priv->spi_rx_buf;
 	int i;
 
-
 	mutex_lock(&priv->spi_lock);
 
-	stm32bb_spi_trans(spi, CAN_RX0, 13 * 16);// 16 msgs (13bytes each)
+	stm32bb_spi_trans(spi, CAN_RX0, CAN_MESSAGE_SIZE * CAN_BUFFER_SIZE);
 
-	// parse each message from buffer, stop on invalid
-	for (i = 0; i < 16; i++, buf += 13) {
+	/* Parse each valid message from received buffer */
+	for (i = 0; i < CAN_BUFFER_SIZE; i++) {
 		if (buf[0] & CAN_MSG_INV) {
 			break;
 		}
 
+		/* allocate new skb for each message */
 		skb = alloc_can_skb(priv->net, &frame);
 		if (!skb) {
 			dev_err(&spi->dev, "cannot allocate RX skb\n");
@@ -275,20 +270,25 @@ static void stm32bb_hw_rx(struct spi_device *spi)
 			return;
 		}
 
+		/* Extract DLC */
 		frame->can_dlc = get_can_dlc(buf[0] & CAN_MSG_SIZE);
-		frame->can_id = buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
 
+		/* Extract ID with additional flags */
+		frame->can_id = buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
 		frame->can_id |= (buf[0] & CAN_MSG_RTR) ? CAN_RTR_FLAG : 0; /* rtr */
 		frame->can_id |= (buf[0] & CAN_MSG_EID) ? CAN_EFF_FLAG : 0; /* Extended ID Enable */
 
+		/* Copy data */
 		memcpy(frame->data, buf + 5, frame->can_dlc);
 
+		/* Update stats and submit */
 		priv->net->stats.rx_packets++;
 		priv->net->stats.rx_bytes += frame->can_dlc;
 		netif_rx(skb);
-	}
 
-	dev_err(&spi->dev, "received %d messages\n", i);
+		/* advance buffer */
+		buf += CAN_MESSAGE_SIZE;
+	}
 
 	mutex_unlock(&priv->spi_lock);
 
@@ -303,10 +303,12 @@ static void stm32bb_get_measurement(struct spi_device *spi)
 
 	stm32bb_spi_trans(spi, PWR_DATA, 8);
 
+	/* Extract measurements from received buffer */
 	priv->pwr_data.i_bat = buf[0] | buf[1] << 8;
 	priv->pwr_data.i_sys = buf[2] | buf[3] << 8;
 	priv->pwr_data.v_bat = buf[4] | buf[5] << 8;
 	priv->pwr_data.v_ac  = buf[6] | buf[7] << 8;
+
 	mutex_unlock(&priv->spi_lock);
 }
 
@@ -317,11 +319,11 @@ static void stm32bb_set_current(struct spi_device *spi)
 
 	mutex_lock(&priv->spi_lock);
 
-	buf[0] = 0xff & priv->pwr_iset.i_ac;
-	buf[1] = 0xff & (priv->pwr_iset.i_ac >> 8);
+	buf[0] = priv->pwr_iset.i_ac & 0xff;
+	buf[1] = (priv->pwr_iset.i_ac >> 8) & 0xff;
 
-	buf[2] = 0xff & priv->pwr_iset.i_bat;
-	buf[3] = 0xff & (priv->pwr_iset.i_bat >> 8);
+	buf[2] = priv->pwr_iset.i_bat & 0xff;
+	buf[3] = (priv->pwr_iset.i_bat >> 8) & 0xff;
 
 	stm32bb_spi_trans(spi, PWR_I_SET | CMD_WRITE, 4);
 	mutex_unlock(&priv->spi_lock);
@@ -363,7 +365,7 @@ static void stm32bb_set_normal_mode(struct spi_device *spi)
 	/* enable error reporting */
 	reg |= CAN_CTRL_IERR;
 	/* enable automatic bus-off managenment */
-	// reg |= CAN_CTRL_ABOM;
+	/* reg |= CAN_CTRL_ABOM; */
 
 	if (priv->can.ctrlmode & CAN_CTRLMODE_LOOPBACK) {
 		/* Put device into loopback mode */
@@ -400,12 +402,12 @@ static int stm32bb_do_set_bittiming(struct net_device *net)
 	struct spi_device *spi = priv->spi;
 	uint32_t timing_reg = 0;
 	
-	// other timings 
+	/* Bit timing */
 	timing_reg |= ((bt->sjw) << 8) & 0x00000f00;
 	timing_reg |= ((bt->phase_seg2 - 1) << 4) & 0x000000f0;
 	timing_reg |= (bt->phase_seg1 + bt->prop_seg - 1) & 0x0000000f;
 
-	// insert BRP
+	/* BRP setting */
 	timing_reg <<= 16;
 	timing_reg |= (bt->brp - 1) & 0x03ff;
 
@@ -421,6 +423,7 @@ static int stm32bb_pwr_setup(struct stm32bb_priv *priv)
 	struct spi_device *spi = priv->spi;
 	uint16_t reg;
 
+	/* Enable power control */
 	reg = stm32bb_read_reg(spi, PWR_CTRL, 2);
 	reg |= PWR_CTRL_ADC | PWR_CTRL_PWM | PWR_CTRL_EN;
 	stm32bb_write_reg(spi, PWR_CTRL, reg, 2);
@@ -463,12 +466,12 @@ static void stm32bb_hw_reset(struct spi_device *spi)
 static void stm32bb_can_reset(struct spi_device *spi)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
-	//int ret;
 	unsigned long timeout;
 
-	// FIXME - this doesn't work very well
-	//stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_RST, 2);
-	//mdelay(50);
+	/* FIXME - this doesn't work very well 
+	 * stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_RST, 2);
+	 * mdelay(50);
+	 */
 
 	/* lets enter init state */
 	stm32bb_write_reg(spi, CAN_CTRL, CAN_CTRL_INIT, 2);
@@ -520,8 +523,7 @@ static int stm32bb_hw_probe(struct spi_device *spi)
 
 	dev_info(&spi->dev, "System ID = 0x%04x\n", id);
 
-	/* Check for power up default values */
-	return (id == SYS_ID_MAGIC) ? 1 : 0;
+	return (id == SYS_ID_MAGIC) ? 0 : 1;
 }
 
 /*
@@ -688,7 +690,6 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 
 
 	while (!priv->force_quit && !freezing(current)) {
-		// atomic read'n'clear
 		intf = stm32bb_read_reg(spi, SYS_INTF, 2);
 		if (intf == 0x0000) {
 			/* only way to leave loop is to serve every interrupt !!! */
@@ -705,12 +706,16 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 			enum can_state new_state = CAN_STATE_ERROR_ACTIVE;
 
 			/* make snapshot of can status reg */
+			/* FIXME: sometimes first read returns bogus data */
+			stm32bb_read_reg(spi, CAN_STATUS, 2);
 			can_status = stm32bb_read_reg(spi, CAN_STATUS, 2);
-//dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
+#if 0
+			dev_info(&spi->dev, "ISR: intf: %04x status: %04x \n", intf, can_status);
+#endif
 			if (intf & SYS_INT_CANERRIF) {
 				eflag = stm32bb_read_reg(spi, CAN_ERR, 4);
-				dev_err(&spi->dev, "ISR: Error: 0x%04x\n", eflag);
-				dev_err(&spi->dev, "ISR: Error: TEC: 0x%02x REC: 0x%02x LEC: 0x%02x flags: %s %s %s\n",
+				dev_info(&spi->dev, "ISR: Error: 0x%04x\n", eflag);
+				dev_info(&spi->dev, "ISR: Error: TEC: 0x%02x REC: 0x%02x LEC: 0x%02x flags: %s %s %s\n",
 					((eflag & CAN_ERR_TEC) >> 16), ((eflag & CAN_ERR_REC) >> 24),
 					((eflag & CAN_ERR_LEC) >> 4), (eflag & CAN_ERR_BOFF)?"BOFF":"",
 					(eflag & CAN_ERR_EPVF)?"EOVF":"", (eflag & CAN_ERR_EWGF)?"EWGF":"");
@@ -758,7 +763,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 						stm32bb_can_sleep(spi);
 					}
 				}
-			} // CAN_ERRIF
+			} /* CAN_ERRIF */
 
 			/* in case of "event" notify higher level */
 			if (can_id_res != 0 || can_id_err != 0) {
@@ -777,15 +782,22 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 				}
 			}
 
-			/* Data in FIFO0 */
+			/* Data in RX0 */
 			if (intf & SYS_INT_CANRX0IF) {
-dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs status = %d\n", (can_status >> 8) & 0x0f, can_status);
+				if (can_status & CAN_STAT_RXOV) {
+					dev_info(&spi->dev, "Possible RX0 overflow!\n");
+				}
+#if 0
+				dev_info(&spi->dev, "ISR: RX0 interrupt %d msgs status = %d\n", (can_status >> 8) & 0x0f, can_status);
+#endif
 				stm32bb_hw_rx(spi);
 			}
 
 			/* Message TX interrupt  */
 			if (intf & SYS_INT_CANTXIF) {
-dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
+#if 0
+				dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
+#endif
 				if (can_status & CAN_STAT_ALST) {
 					priv->can.can_stats.arbitration_lost++;
 					dev_warn(&spi->dev, "Arbitration lost !\n");
@@ -819,7 +831,7 @@ dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
 				}
 			}
 
-		} // end of can
+		}
 /*
 		if (intf & SYS_INT_PWRMASK) {
 			uint16_t pwr_status;
@@ -839,9 +851,9 @@ dev_info(&spi->dev, "ISR: TX interrupt 0x%04x\n", can_status);
 					printk("Adapter unpluged !!\n");
 				}
 			}
-		} // end of power
+		}
 */
-	} // while
+	}
 }
 
 static irqreturn_t stm32bb_can_isr(int irq, void *dev_id)
@@ -858,12 +870,11 @@ static irqreturn_t stm32bb_can_isr(int irq, void *dev_id)
 
 static irqreturn_t stm32bb_transfer_ready_isr(int irq, void *dev_id)
 {
-	struct net_device *net = (struct net_device *)dev_id;
-	struct stm32bb_priv *priv = netdev_priv(net);
+	struct spi_device *spi = (struct spi_device *)dev_id;
+	struct stm32bb_priv *priv = dev_get_drvdata(&spi->dev);
 
-	printk("tik\n");
 	/* Wake-up sleeping task */
-	atomic_set(&priv->transfer_ready, 1);
+	atomic_set(&priv->data_ready, 1);
 	wake_up_interruptible(&priv->spi_wait);
 
 	return IRQ_HANDLED;
@@ -1010,7 +1021,6 @@ static ssize_t
 show_chgcur(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct stm32bb_priv *priv = dev_get_drvdata(dev);
-//	struct spi_device *spi = priv->spi;
 
 	return sprintf(buf, "%u %u\n", priv->pwr_iset.i_ac, priv->pwr_iset.i_bat);
 }
@@ -1188,7 +1198,7 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 	INIT_WORK(&priv->tx_work, stm32bb_tx_work_handler);
 	INIT_WORK(&priv->irq_work, stm32bb_irq_work_handler);
 	init_waitqueue_head(&priv->spi_wait);
-	atomic_set(&priv->transfer_ready, 0);
+	atomic_set(&priv->data_ready, 0);
 
 	/* Configure the SPI bus */
 	spi->mode = SPI_MODE_0;
@@ -1203,11 +1213,12 @@ static int __devinit stm32bb_can_probe(struct spi_device *spi)
 	ret = request_irq(pdata->transfer_ready, stm32bb_transfer_ready_isr, IRQF_TRIGGER_FALLING,
 		DEVICE_NAME "_dr", spi);
 	if (ret) {
-		dev_err(&spi->dev, "failed to acquire irq %d\n", spi->irq);
+		dev_err(&spi->dev, "failed to acquire irq %d\n", pdata->transfer_ready);
 		goto trans_error_probe;
 	}
 
-	if (!stm32bb_hw_probe(spi)) {
+	ret = stm32bb_hw_probe(spi);
+	if (ret) {
 		dev_info(&spi->dev, "Probe failed\n");
 		goto error_probe;
 	}
@@ -1258,7 +1269,7 @@ sys_failed:
 ac_failed:
 	free_irq(spi->irq, net);
 error_probe:
-	free_irq(pdata->transfer_ready, net);
+	free_irq(pdata->transfer_ready, spi);
 trans_error_probe:
 	if (!stm32bb_enable_dma)
 		kfree(priv->spi_rx_buf);
@@ -1289,7 +1300,7 @@ static int __devexit stm32bb_can_remove(struct spi_device *spi)
 	power_supply_unregister(&stm32bb_ac);
 	power_supply_unregister(&stm32bb_sys);
 	power_supply_unregister(&stm32bb_bat);
-	free_irq(pdata->transfer_ready, net);
+	free_irq(pdata->transfer_ready, spi);
 	free_irq(spi->irq, net);
 
 	priv->force_quit = 1;
