@@ -822,6 +822,8 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int ret = 0;
 
+	mutex_lock(&priv->lock);
+
 	if (!priv->hw_enable) {
 		/* link is in low power mode now; duplex setting
 		 * will take effect on next enc424j600_hw_init().
@@ -842,6 +844,8 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 				"to set link mode\n");
 		ret = -EBUSY;
 	}
+	mutex_unlock(&priv->lock);
+
 	return ret;
 }
 
@@ -893,7 +897,6 @@ static void dump_packet(const char *msg, int len, const char *data)
  * Hardware receive function.
  * Read the buffer memory, update the FIFO pointer to free the buffer,
  * check the status vector and decrement the packet counter.
- * TODO: Locking?
  */
 static void enc424j600_hw_rx(struct net_device *ndev)
 {
@@ -976,8 +979,6 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	 * received packet.
 	 * This frees the memory we just read out
 	 */
-	mutex_lock(&priv->lock);
-
 	priv->next_pk_ptr = next_packet;
 
 	/* unprotect the area that was used by this packet. */
@@ -985,7 +986,6 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 
 	/* we are done with this packet, decrement the packet counter */
 	enc424j600_set_bits(priv, ECON1H, PKTDEC);
-	mutex_unlock(&priv->lock);
 }
 
 /*
@@ -1066,9 +1066,11 @@ static void enc424j600_int_link_handler(struct enc424j600_net *priv)
 		printk(KERN_DEBUG DRV_NAME
 			": intLINK\n");
 
+	mutex_lock(&priv->lock);
 	/* we check more than is necessary here --
 	 * only PHYLNK would be needed. */
 	enc424j600_check_link_status(priv);
+	mutex_unlock(&priv->lock);
 }
 
 static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
@@ -1119,6 +1121,8 @@ static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
 {
 	uint8_t pk_counter;
 	int ret;
+	
+	mutex_lock(&priv->lock);
 
 	enc424j600_read_8b_sfr(priv, ESTATL, &pk_counter);
 
@@ -1134,6 +1138,8 @@ static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
 	ret = pk_counter;
 	while (pk_counter-- > 0)
 		enc424j600_hw_rx(priv->netdev);
+
+	mutex_unlock(&priv->lock);
 
 	return ret;
 }
@@ -1214,8 +1220,6 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 		dump_packet(__func__,
 			priv->tx_skb->len, priv->tx_skb->data);
 
-	mutex_lock(&priv->lock);
-
 	/* Copy the packet into the transmit buffer */
 	enc424j600_write_sram(priv,
 		priv->tx_skb->data, priv->tx_skb->len,
@@ -1230,8 +1234,6 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 	/* set TX request flag */
 	enc424j600_set_bits(priv, ECON1L, TXRTS);
 
-	mutex_unlock(&priv->lock);
-
 }
 
 static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *dev)
@@ -1241,14 +1243,6 @@ static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *dev)
 	if (netif_msg_tx_queued(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
-	/* If some error occurs while trying to transmit this
-	 * packet, you should return '1' from this function.
-	 * In such a case you _may not_ do anything to the
-	 * SKB, it is still owned by the network queueing
-	 * layer when an error is returned.  This means you
-	 * may not modify any SKB fields, you may not free
-	 * the SKB, etc.
-	 */
 	netif_stop_queue(dev);
 
 	/* save the timestamp */
@@ -1265,8 +1259,10 @@ static void enc424j600_tx_work_handler(struct work_struct *work)
 	struct enc424j600_net *priv =
 		container_of(work, struct enc424j600_net, tx_work);
 
+	mutex_lock(&priv->lock);
 	/* actual delivery of data */
 	enc424j600_hw_tx(priv);
+	mutex_unlock(&priv->lock);
 }
 
 static irqreturn_t enc424j600_irq(int irq, void *dev_id)
@@ -1330,8 +1326,12 @@ static int enc424j600_net_open(struct net_device *dev)
 	enc424j600_set_hw_macaddr(dev);
 	/* Enable interrupts */
 	enc424j600_hw_enable(priv);
+
+	mutex_lock(&priv->lock);
 	/* check link status */
 	enc424j600_check_link_status(priv);
+	mutex_unlock(&priv->lock);
+
 	/* We are now ready to accept transmit requests from
 	 * the queueing layer of the networking.
 	 */
@@ -1363,6 +1363,8 @@ static void enc424j600_set_multicast_list(struct net_device *dev)
 	struct enc424j600_net *priv = netdev_priv(dev);
 	int oldfilter = priv->rxfilter;
 
+	mutex_lock(&priv->lock);
+
 	if (dev->flags & IFF_PROMISC) {
 		if (netif_msg_link(priv))
 			dev_info(&dev->dev, "promiscuous mode\n");
@@ -1380,6 +1382,8 @@ static void enc424j600_set_multicast_list(struct net_device *dev)
 
 	if (oldfilter != priv->rxfilter)
 		schedule_work(&priv->setrx_work);
+
+	mutex_unlock(&priv->lock);
 }
 
 static void enc424j600_setrx_work_handler(struct work_struct *work)
