@@ -2,7 +2,7 @@
  * Microchip ENC424J600 ethernet driver (MAC + PHY)
  *
  * Author: Kuba Marek <blue.cube@seznam.cz>
- * based on enc424j600.c written by Claudio Lanconelli
+ * based on enc28j60.c written by Claudio Lanconelli
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
