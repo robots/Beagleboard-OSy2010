@@ -3,6 +3,13 @@
 
 \page encdriverpage Linux driver for Microchip ENC424j600 SPI Ethernet controller
 
-Some fun talk about beagleboard and STM32 board.
+This driver was based on enc28j60 driver by Claudio Lanconelli.
+
+- Using banked reads / writes.
+	- Several registers can be accessed from all banks.
+- Write verification
+	CONFIG_ENC424J600_WRITEVERIFY
+- Rx buffer wrapping
+- PHY registers
 
 */

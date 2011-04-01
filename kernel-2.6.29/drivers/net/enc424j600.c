@@ -40,7 +40,8 @@
 
 #define MAX_TX_RETRYCOUNT	16
 
-static int enc424j600_enable_dma = 1; /* Enable SPI DMA. Default: 1 (On) */
+/** Enable SPI DMA. Default: 1 (On) */
+static int enc424j600_enable_dma = 1;
 
 enum {
 	RXFILTER_NORMAL,
@@ -48,7 +49,7 @@ enum {
 	RXFILTER_PROMISC
 };
 
-/* Driver local data */
+/** Driver local data */
 struct enc424j600_net {
 	struct net_device *netdev;
 	struct spi_device *spi;
@@ -82,6 +83,10 @@ static struct {
 
 static void enc424j600_check_link_status(struct enc424j600_net *priv);
 
+/**
+ * Transfers len bytes to and from the buffers stored in the priv structure over the SPI.
+ * \note This is both send and receive!
+ */
 static int enc424j600_spi_trans(struct enc424j600_net *priv, int len)
 {
 	struct spi_transfer t = {
@@ -109,9 +114,13 @@ static int enc424j600_spi_trans(struct enc424j600_net *priv, int len)
 	return ret;
 }
 
-/*
+/**
  * Read data from chip SRAM.
- * Returns 0 on success, negative error code otherwise.
+ * \return 0 on success, negative error code otherwise.
+ * \param priv The enc424j600 structure.
+ * \param dst Pointer to destination buffer.
+ * \param len Number of bytes to read.
+ * \param srcaddr Address of the data in the chip SRAM.
  */
 static int enc424j600_read_sram(struct enc424j600_net *priv,
 			 u8 *dst, int len, u16 srcaddr)
@@ -137,9 +146,12 @@ static int enc424j600_read_sram(struct enc424j600_net *priv,
 	return ret;
 }
 
-/*
+/**
  * Write data to chip SRAM.
- * Returns 0 on success, negative error code otherwise.
+ * \param priv The enc424j600 structure.
+ * \param dst Pointer to destination buffer.
+ * \param srcaddr Address of the data in the chip SRAM.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_write_sram(struct enc424j600_net *priv,
 			 const u8 *src, int len, u16 dstaddr)
@@ -188,8 +200,11 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 	return ret;
 }
 
-/*
- * Select the current register bank if necessary to be able to read @addr.
+/**
+ * Ensure that sfr can be accessed using banked instructions.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be accessed.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_set_bank(struct enc424j600_net *priv, u8 sfr)
 {
@@ -210,10 +225,13 @@ static int enc424j600_set_bank(struct enc424j600_net *priv, u8 sfr)
 	return ret;
 }
 
-/*
- * Read a 8bit special function register.
- * The @sfr parameters takes address of the register.
+/**
+ * Read an 8bit special function register.
  * Uses banked read instruction.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be read.
+ * \param [out] data Resulting byte.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_read_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 *data)
 {
@@ -227,10 +245,13 @@ static int enc424j600_read_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 *data)
 	return ret;
 }
 
-/*
- * Write a 8bit special function register.
- * The @sfr parameters takes address of the register.
+/**
+ * Write an 8bit special function register.
  * Uses banked write instruction.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be written.
+ * \param data Byte to write.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
 {
@@ -258,11 +279,13 @@ static int enc424j600_write_8b_sfr(struct enc424j600_net *priv, u8 sfr, u8 data)
 	return ret;
 }
 
-/*
- * Read a 16bit special function register.
- * The @sfr parameters takes address of the low byte of the register.
- * Takes care of the endiannes & buffers.
+/**
+ * Read an 16bit special function register.
  * Uses banked read instruction.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be read.
+ * \param [out] data Resulting word.
+ * \return Zero on success, negative error code otherwise.
  */
 static int
 enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
@@ -279,11 +302,13 @@ enc424j600_read_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 *data)
 	return ret;
 }
 
-/*
- * Write a 16bit special function register.
- * The @sfr parameters takes address of the low byte of the register.
- * Takes care of the endiannes & buffers.
+/**
+ * Write an 16bit special function register.
  * Uses banked write instruction.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be written.
+ * \param data Word to write.
+ * \return Zero on success, negative error code otherwise.
  */
 static int
 enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 data)
@@ -313,8 +338,12 @@ enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 data)
 	return ret;
 }
 
-/*
+/**
  * Set bits in an 8bit SFR.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be modified.
+ * \param mask Mask of bits to be set.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_set_bits(struct enc424j600_net *priv, u8 sfr, u8 mask)
 {
@@ -341,8 +370,12 @@ static int enc424j600_set_bits(struct enc424j600_net *priv, u8 sfr, u8 mask)
 	return ret;
 }
 
-/*
+/**
  * Clear bits in an 8bit SFR.
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be modified.
+ * \param mask Mask of bits to be cleared.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 sfr, u8 mask)
 {
@@ -369,10 +402,19 @@ static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 sfr, u8 mask)
 	return ret;
 }
 
-/*
- * Read memory from the wrapped RX area.
- * Handles srcaddr that is behind the rx area end (this is wrapped
- * as well).
+/**
+ * Read data from chip receive buffer area of SRAM
+ * (circular buffer RX_BUFFER_SIZE long and ending with the end of SRAM).
+ *
+ * \pre srcaddr + len < SRAM_SIZE + RX_BUFFER_SIZE
+ * \pre srcaddr >= SRAM_SIZE - RX_BUFFER_SIZE
+ * \pre len <= RX_BUFFER_SIZE
+ *
+ * \return 0 on success, negative error code otherwise.
+ * \param priv The enc424j600 structure.
+ * \param dst Pointer to destination buffer.
+ * \param len Number of bytes to read.
+ * \param srcaddr Address of the data in the chip SRAM.
  */
 static int enc424j600_read_rx_area(struct enc424j600_net *priv,
 			 u8 *dst, int len, u16 srcaddr)
@@ -394,12 +436,10 @@ static int enc424j600_read_rx_area(struct enc424j600_net *priv,
 	}
 }
 
-/*
+/**
  * Reset the enc424j600.
  * (Datasheet: 8.1)
- * TODO: What if we get stuck on non-working spi with the initial
- * test access to EUDAST ?
- * TODO: Errors?
+ * \param priv The enc424j600 structure.
  */
 static void enc424j600_soft_reset(struct enc424j600_net *priv)
 {
@@ -431,8 +471,15 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 	udelay(500);
 }
 
-/*
- * Wait for bits in register to become equal to @readyMask, but at most 20ms.
+/**
+ * Wait for bits in register to become equal to expected, but at most 20ms.
+ *
+ * \pre (expected & ~mask) == 0
+ *
+ * \param priv The enc424j600 structure.
+ * \param sfr Register that will be modified.
+ * \param mask Mask of interesting bytes..
+ * \param expected Value that will stop the wait.
  */
 static int
 poll_ready(struct enc424j600_net *priv, u8 sfr, u8 mask, u8 expected)
@@ -455,9 +502,13 @@ poll_ready(struct enc424j600_net *priv, u8 sfr, u8 mask, u8 expected)
 	return 0;
 }
 
-/*
- * PHY register read
- * PHY registers are not accessed directly, but through the MII
+/**
+ * PHY sfr read.
+ * PHY registers are not accessed directly, but through the MII registers..
+ * \param priv The enc424j600 structure.
+ * \param address PHY register address.
+ * \param [out] data Resulting word.
+ * \return Zero on success, negative error code otherwise.
  */
 static int
 enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *data)
@@ -474,6 +525,14 @@ enc424j600_phy_read(struct enc424j600_net *priv, u16 address, u16 *data)
 	return ret;
 }
 
+/**
+ * PHY sfr write.
+ * PHY registers are not accessed directly, but through the MII registers..
+ * \param priv The enc424j600 structure.
+ * \param address PHY register address.
+ * \param data Word to write.
+ * \return Zero on success, negative error code otherwise.
+ */
 static int
 enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 {
@@ -496,8 +555,9 @@ enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 	return ret;
 }
 
-/*
+/**
  * Set the filters in the chip according to priv->rxfilter .
+ * \param priv The enc424j600 structure.
  */
 static void enc424j600_set_hw_filters(struct enc424j600_net *priv)
 {
