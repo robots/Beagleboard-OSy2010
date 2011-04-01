@@ -436,7 +436,7 @@
 #define SRAM_SIZE		0x6000
 
 /* Start of the receive buffer */
-#define ERXST_VAL		(SRAM_SIZE - RX_BUFFER_SIZE)
+#define RX_BUFFER_START		(SRAM_SIZE - RX_BUFFER_SIZE)
 
 /* RSV Values */
 #define RSV_PREVIOUSLY_IGNORED	16

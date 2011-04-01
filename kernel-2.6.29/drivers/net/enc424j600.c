@@ -432,7 +432,7 @@ static int enc424j600_read_rx_area(struct enc424j600_net *priv,
 			return ret;
 
 		return enc424j600_read_sram(priv,
-			dst + split, len - split, ERXST_VAL);
+			dst + split, len - split, RX_BUFFER_START);
 	}
 }
 
@@ -651,17 +651,17 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 /*
  * Store the new hardware address in dev->dev_addr, and update the MAC.
  */
-static int enc424j600_set_mac_address(struct net_device *dev, void *addr)
+static int enc424j600_set_mac_address(struct net_device *ndev, void *addr)
 {
 	struct sockaddr *address = addr;
 
-	if (netif_running(dev))
+	if (netif_running(ndev))
 		return -EBUSY;
 	if (!is_valid_ether_addr(address->sa_data))
 		return -EADDRNOTAVAIL;
 
-	memcpy(dev->dev_addr, address->sa_data, dev->addr_len);
-	return enc424j600_set_hw_macaddr(dev);
+	memcpy(ndev->dev_addr, address->sa_data, ndev->addr_len);
+	return enc424j600_set_hw_macaddr(ndev);
 }
 
 static void enc424j600_lowpower_enable(struct enc424j600_net *priv)
@@ -725,7 +725,7 @@ static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv)
 {
 	u16 tail = priv->next_pk_ptr - 2;
 
-	if (tail < ERXST_VAL)
+	if (tail < RX_BUFFER_START)
 		tail = SRAM_SIZE - 2;
 
 	enc424j600_write_16b_sfr(priv, ERXTAILL, tail);
@@ -735,13 +735,8 @@ static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv)
  * Datasheet: 8.3, 9.2.1 */
 static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 {
-	/* ERXST (start of the rx buffer => its size) */
-	enc424j600_write_16b_sfr(priv, ERXSTL, ERXST_VAL);
-
-	/* Where the next frame should be read. */
-	priv->next_pk_ptr = ERXST_VAL;
-
-	/* ERXTAIL (end of the unprocessed block) */
+	enc424j600_write_16b_sfr(priv, ERXSTL, RX_BUFFER_START);
+	priv->next_pk_ptr = RX_BUFFER_START;
 	enc424j600_clear_unprocessed_rx_area(priv);
 }
 
@@ -784,7 +779,6 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 			(eidledl & REVID_MASK) >> REVID_SHIFT);
 
 
-	/* Prepare the receive buffer */
 	enc424j600_prepare_rx_buffer(priv);
 
 	enc424j600_set_hw_filters(priv);
