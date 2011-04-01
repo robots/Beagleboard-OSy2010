@@ -1,4 +1,5 @@
-/*
+/**
+ * \file
  * Microchip ENC424J600 ethernet driver (MAC + PHY)
  *
  * Author: Kuba Marek <blue.cube@seznam.cz>
@@ -10,6 +11,7 @@
  * (at your option) any later version.
  *
  */
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -149,8 +151,9 @@ static int enc424j600_read_sram(struct enc424j600_net *priv,
 /**
  * Write data to chip SRAM.
  * \param priv The enc424j600 structure.
- * \param dst Pointer to destination buffer.
- * \param srcaddr Address of the data in the chip SRAM.
+ * \param src Pointer to source buffer.
+ * \param len Number of bytes to write.
+ * \param dstaddr Address of the destination in the chip SRAM.
  * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_write_sram(struct enc424j600_net *priv,
@@ -438,7 +441,7 @@ static int enc424j600_read_rx_area(struct enc424j600_net *priv,
 
 /**
  * Reset the enc424j600.
- * (Datasheet: 8.1)
+ * \note Datasheet: 8.1
  * \param priv The enc424j600 structure.
  */
 static void enc424j600_soft_reset(struct enc424j600_net *priv)
@@ -504,7 +507,7 @@ poll_ready(struct enc424j600_net *priv, u8 sfr, u8 mask, u8 expected)
 
 /**
  * PHY sfr read.
- * PHY registers are not accessed directly, but through the MII registers..
+ * PHY registers are not accessed directly, but through the MII registers.
  * \param priv The enc424j600 structure.
  * \param address PHY register address.
  * \param [out] data Resulting word.
@@ -558,6 +561,7 @@ enc424j600_phy_write(struct enc424j600_net *priv, u16 address, u16 data)
 /**
  * Set the filters in the chip according to priv->rxfilter .
  * \param priv The enc424j600 structure.
+ * \return Zero on success, negative error code otherwise.
  */
 static void enc424j600_set_hw_filters(struct enc424j600_net *priv)
 {
@@ -580,8 +584,11 @@ static void enc424j600_set_hw_filters(struct enc424j600_net *priv)
 }
 
 
-/*
- * Read the hardware MAC address to dev->dev_addr.
+/**
+ * Read the hardware MAC address to ndev->dev_addr.
+ * \note Locks the driver's mutex.
+ * \param ndev The network device.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 {
@@ -612,8 +619,11 @@ static int enc424j600_get_hw_macaddr(struct net_device *ndev)
 	return 0;
 }
 
-/*
- * Program the hardware MAC address from dev->dev_addr.
+/**
+ * Program the hardware MAC address from ndev->dev_addr.
+ * \note Locks the driver's mutex.
+ * \param ndev The network device.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 {
@@ -648,8 +658,14 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 	return 0;
 }
 
-/*
- * Store the new hardware address in dev->dev_addr, and update the MAC.
+/**
+ * Store the new hardware address in dev->dev_addr, and call
+ * enc424j600_set_hw_macaddr.
+ * \note This function is a part of interface to kernel exported in
+ * enc424j600_netdev_ops.
+ * \param ndev The network device.
+ * \param addr New MAC address.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_set_mac_address(struct net_device *ndev, void *addr)
 {
@@ -664,6 +680,11 @@ static int enc424j600_set_mac_address(struct net_device *ndev, void *addr)
 	return enc424j600_set_hw_macaddr(ndev);
 }
 
+/**
+ * Put the chip into low power mode.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_lowpower_enable(struct enc424j600_net *priv)
 {
 	u16 phcon1;
@@ -687,6 +708,11 @@ static void enc424j600_lowpower_enable(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Wake the chip from low power mode.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_lowpower_disable(struct enc424j600_net *priv)
 {
 	u16 phcon1;
@@ -707,8 +733,12 @@ static void enc424j600_lowpower_disable(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
-/* Waits for autonegotiation to complete and sets FULDPX bit in macon2.
- * TODO Sets FULDPX? */
+/**
+ * Waits for autonegotiation to complete.
+ * This is similar to poll_ready, but in this case we're using
+ * PHY registers instead of the regular SFRs.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
 {
 	u16 phstat1;
@@ -718,9 +748,11 @@ static void enc424j600_wait_for_autoneg(struct enc424j600_net *priv)
 	} while (!(phstat1 & ANDONE));
 }
 
-/* Sets the protected area in rx buffer to be 2 bytes long
- * (smallest allowed value)
- * Takes care of the rx buffer wrapping */
+/**
+ * Sets the protected area in RX buffer to a smallest allowed value (2 bytes).
+ * Takes care of the buffer wrapping
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv)
 {
 	u16 tail = priv->next_pk_ptr - 2;
@@ -731,8 +763,11 @@ static void enc424j600_clear_unprocessed_rx_area(struct enc424j600_net *priv)
 	enc424j600_write_16b_sfr(priv, ERXTAILL, tail);
 }
 
-/* Prepare the receive buffer in the chip
- * Datasheet: 8.3, 9.2.1 */
+/**
+ * Prepare the receive buffer in the chip.
+ * \note Datasheet: 8.3, 9.2.1
+ * \param priv The enc424j600 structure.
+ * */
 static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 {
 	enc424j600_write_16b_sfr(priv, ERXSTL, RX_BUFFER_START);
@@ -1288,6 +1323,9 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 
 }
 
+/*
+ * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+ */
 static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *dev)
 {
 	struct enc424j600_net *priv = netdev_priv(dev);
@@ -1333,6 +1371,9 @@ static irqreturn_t enc424j600_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+/**
+ * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+ */
 static void enc424j600_tx_timeout(struct net_device *ndev)
 {
 	struct enc424j600_net *priv = netdev_priv(ndev);
@@ -1345,13 +1386,14 @@ static void enc424j600_tx_timeout(struct net_device *ndev)
 	schedule_work(&priv->restart_work);
 }
 
-/*
+/**
  * Open/initialize the board. This is called (in the current kernel)
  * sometime after booting when the 'ifconfig' program is run.
  *
  * This routine should set everything up anew at each open, even
  * registers that "should" only need to be set once at boot, so that
  * there is non-reboot way to recover if something goes wrong.
+ * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
  */
 static int enc424j600_net_open(struct net_device *dev)
 {
@@ -1392,7 +1434,10 @@ static int enc424j600_net_open(struct net_device *dev)
 	return 0;
 }
 
-/* The inverse routine to net_open(). */
+/**
+ * The inverse routine to net_open().
+ * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+ */
 static int enc424j600_net_close(struct net_device *dev)
 {
 	struct enc424j600_net *priv = netdev_priv(dev);
@@ -1409,6 +1454,7 @@ static int enc424j600_net_close(struct net_device *dev)
 
 /*
  * Set or clear the multicast filter for this adapter
+ * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
  */
 static void enc424j600_set_multicast_list(struct net_device *dev)
 {

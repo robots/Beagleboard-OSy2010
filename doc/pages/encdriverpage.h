@@ -9,7 +9,10 @@ This driver was based on enc28j60 driver by Claudio Lanconelli.
 	- Several registers can be accessed from all banks.
 - Write verification
 	CONFIG_ENC424J600_WRITEVERIFY
-- Rx buffer wrapping
+- RX buffer
+	- Rx buffer wrapping
+	- Protected RX area
 - PHY registers
-
+- Locking
+- Low power
 */
