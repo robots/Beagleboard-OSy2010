@@ -191,20 +191,23 @@ static int enc424j600_write_sram(struct enc424j600_net *priv,
 /*
  * Select the current register bank if necessary to be able to read @addr.
  */
-static void enc424j600_set_bank(struct enc424j600_net *priv, u8 addr)
+static int enc424j600_set_bank(struct enc424j600_net *priv, u8 sfr)
 {
-	u8 b = (addr & BANK_MASK) >> BANK_SHIFT;
+	u8 b = (sfr & BANK_MASK) >> BANK_SHIFT;
+	int ret;
 
 	/* These registers are present in all banks, no need to switch bank */
-	if (addr >= EUDASTL && addr <= ECON1H)
-		return;
+	if (sfr >= EUDASTL && sfr <= ECON1H)
+		return 0;
 	if (priv->bank == b)
-		return;
+		return 0;
 
 	priv->spi_tx_buf[0] = BXSEL(b);
-	enc424j600_spi_trans(priv, 1);
+	ret = enc424j600_spi_trans(priv, 1);
 
 	priv->bank = b;
+
+	return ret;
 }
 
 /*
@@ -313,12 +316,12 @@ enc424j600_write_16b_sfr(struct enc424j600_net *priv, u8 sfr, u16 data)
 /*
  * Set bits in an 8bit SFR.
  */
-static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
+static int enc424j600_set_bits(struct enc424j600_net *priv, u8 sfr, u8 mask)
 {
 	int ret;
 
-	enc424j600_set_bank(priv, addr);
-	priv->spi_tx_buf[0] = BFS(addr);
+	enc424j600_set_bank(priv, sfr);
+	priv->spi_tx_buf[0] = BFS(sfr);
 	priv->spi_tx_buf[1] = mask;
 	ret = enc424j600_spi_trans(priv, 2);
 
@@ -326,7 +329,7 @@ static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 	if (netif_msg_drv(priv)) {
 		u8 val;
 
-		enc424j600_read_8b_sfr(priv, addr, &val);
+		enc424j600_read_8b_sfr(priv, sfr, &val);
 
 		if ((val & mask) != mask)
 			printk(KERN_DEBUG DRV_NAME
@@ -341,12 +344,12 @@ static int enc424j600_set_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 /*
  * Clear bits in an 8bit SFR.
  */
-static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
+static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 sfr, u8 mask)
 {
 	int ret;
 
-	enc424j600_set_bank(priv, addr);
-	priv->spi_tx_buf[0] = BFC(addr);
+	enc424j600_set_bank(priv, sfr);
+	priv->spi_tx_buf[0] = BFC(sfr);
 	priv->spi_tx_buf[1] = mask;
 	ret = enc424j600_spi_trans(priv, 2);
 
@@ -354,7 +357,7 @@ static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 	if (netif_msg_drv(priv)) {
 		u8 val;
 
-		enc424j600_read_8b_sfr(priv, addr, &val);
+		enc424j600_read_8b_sfr(priv, sfr, &val);
 
 		if ((val & mask) != 0)
 			printk(KERN_DEBUG DRV_NAME
@@ -374,22 +377,20 @@ static int enc424j600_clear_bits(struct enc424j600_net *priv, u8 addr, u8 mask)
 static int enc424j600_read_rx_area(struct enc424j600_net *priv,
 			 u8 *dst, int len, u16 srcaddr)
 {
-	int ret;
-	int split;
-
 	if (srcaddr >= SRAM_SIZE)
 		srcaddr -= RX_BUFFER_SIZE;
 
 	if (srcaddr + len < SRAM_SIZE) {
 		return enc424j600_read_sram(priv, dst, len, srcaddr);
 	} else {
-		split = SRAM_SIZE - srcaddr + 1;
+		int ret;
+		int split = SRAM_SIZE - srcaddr + 1;
 		ret = enc424j600_read_sram(priv, dst, split, srcaddr);
 		if (ret)
 			return ret;
 
-		return enc424j600_read_sram(priv, dst + split, len - split,
-			ERXST_VAL);
+		return enc424j600_read_sram(priv,
+			dst + split, len - split, ERXST_VAL);
 	}
 }
 
@@ -430,28 +431,25 @@ static void enc424j600_soft_reset(struct enc424j600_net *priv)
 	udelay(500);
 }
 
-static unsigned long msec20_to_jiffies;
-
 /*
  * Wait for bits in register to become equal to @readyMask, but at most 20ms.
  */
 static int
-poll_ready(struct enc424j600_net *priv, u8 reg, u8 mask, u8 readyMask)
+poll_ready(struct enc424j600_net *priv, u8 sfr, u8 mask, u8 expected)
 {
-	unsigned long timeout = jiffies + msec20_to_jiffies;
+	unsigned long timeout = jiffies + msecs_to_jiffies(20);
 	u8 value;
 
-	/* 20 msec timeout read */
-	enc424j600_read_8b_sfr(priv, reg, &value);
-	while ((value & mask) != readyMask) {
+	enc424j600_read_8b_sfr(priv, sfr, &value);
+	while ((value & mask) != expected) {
 		if (time_after(jiffies, timeout)) {
 			if (netif_msg_drv(priv))
 				dev_dbg(&priv->spi->dev,
-					"reg %02x ready timeout!\n", reg);
+					"sfr %02x ready timeout!\n", sfr);
 			return -ETIMEDOUT;
 		}
 		cpu_relax();
-		enc424j600_read_8b_sfr(priv, reg, &value);
+		enc424j600_read_8b_sfr(priv, sfr, &value);
 	}
 
 	return 0;
@@ -1521,7 +1519,7 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 	priv->netdev = dev;	/* priv to netdev reference */
 	priv->spi = spi;	/* priv to spi reference */
 	priv->msg_enable = netif_msg_init(debug.msg_enable,
-						ENC424J600_MSG_DEFAULT);
+		ENC424J600_MSG_DEFAULT);
 	mutex_init(&priv->lock);
 	INIT_WORK(&priv->tx_work, enc424j600_tx_work_handler);
 	INIT_WORK(&priv->setrx_work, enc424j600_setrx_work_handler);
@@ -1651,8 +1649,6 @@ static struct spi_driver enc424j600_driver = {
 
 static int __init enc424j600_init(void)
 {
-	msec20_to_jiffies = msecs_to_jiffies(20);
-
 	return spi_register_driver(&enc424j600_driver);
 }
 
