@@ -939,11 +939,11 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 /*
  * Receive Status vector
  */
-static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
-			      u16 pk_ptr, int len, u32 rxstat)
+static void enc424j600_dump_rsv(const char *func, u16 pk_ptr, int len,
+	u32 rxstat)
 {
 	printk(KERN_DEBUG DRV_NAME ": %s - NextPk: 0x%04x - RSV:\n",
-		msg, pk_ptr);
+		func, pk_ptr);
 	printk(KERN_DEBUG DRV_NAME ": Byte count: %d\n", len);
 
 #define PRINT_RSV_BIT(value, desc) \
@@ -973,9 +973,9 @@ static void enc424j600_dump_rsv(struct enc424j600_net *priv, const char *msg,
 #undef PRINT_RSV_BIT
 }
 
-static void dump_packet(const char *msg, int len, const char *data)
+static void dump_packet(const char *func, int len, const char *data)
 {
-	printk(KERN_DEBUG DRV_NAME ": %s - packet len:%d\n", msg, len);
+	printk(KERN_DEBUG DRV_NAME ": %s - packet len:%d\n", func, len);
 	print_hex_dump(KERN_DEBUG, "pk data: ", DUMP_PREFIX_OFFSET, 16, 1,
 			data, len, true);
 }
@@ -998,27 +998,6 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 		printk(KERN_DEBUG DRV_NAME ": RX pk_addr:0x%04x\n",
 			priv->next_pk_ptr);
 
-	/* TODO corrupted packet addresses */
-	#if 0
-	if (unlikely(priv->next_pk_ptr > RXEND_INIT)) {
-		if (netif_msg_rx_err(priv))
-			dev_err(&ndev->dev,
-				"%s() Invalid packet address!! 0x%04x\n",
-				__func__, priv->next_pk_ptr);
-		/* packet address corrupted: reset RX logic */
-		mutex_lock(&priv->lock);
-		nolock_reg_bfclr(priv, ECON1, ECON1_RXEN);
-		nolock_reg_bfset(priv, ECON1, ECON1_RXRST);
-		nolock_reg_bfclr(priv, ECON1, ECON1_RXRST);
-		nolock_rxfifo_init(priv, RXSTART_INIT, RXEND_INIT);
-		nolock_reg_bfclr(priv, EIR, EIR_RXERIF);
-		nolock_reg_bfset(priv, ECON1, ECON1_RXEN);
-		mutex_unlock(&priv->lock);
-		ndev->stats.rx_errors++;
-		return;
-	}
-	#endif
-
 	/* Read next packet pointer and rx status vector */
 	enc424j600_read_rx_area(priv, rsv, sizeof(rsv), priv->next_pk_ptr);
 
@@ -1027,7 +1006,7 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	rxstat = rsv[4] | (rsv[5] << 8) | (rsv[6] << 16);
 
 	if (netif_msg_rx_status(priv))
-		enc424j600_dump_rsv(priv, __func__, next_packet, len, rxstat);
+		enc424j600_dump_rsv(__func__, next_packet, len, rxstat);
 
 	if (!RSV_GETBIT(rxstat, RSV_RXOK) || len > MAX_FRAMELEN) {
 		if (netif_msg_rx_err(priv))
@@ -1223,14 +1202,15 @@ static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
 				priv->max_pk_counter);
 	}
 	ret = pk_counter;
-	while (pk_counter-- > 0)
+	while (pk_counter > 0) {
 		enc424j600_hw_rx(priv->netdev);
+		--pk_counter;
+	}
 
 	mutex_unlock(&priv->lock);
 
 	return ret;
 }
-
 
 static void enc424j600_irq_work_handler(struct work_struct *work)
 {
