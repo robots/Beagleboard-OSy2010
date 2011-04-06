@@ -775,9 +775,14 @@ static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 	enc424j600_clear_unprocessed_rx_area(priv);
 }
 
-/*
- * Reset and initialize the chip, but don't enable interrupts and don't
+/**
+ * Reset and initialize enc424j600, but don't enable interrupts and don't
  * start receiving yet.
+ * This function should get the chip from any state to a reasonable default
+ * configuration
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ * \return Zero on success, negative error code otherwise.
  */
 static int enc424j600_hw_init(struct enc424j600_net *priv)
 {
@@ -818,7 +823,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 
 	enc424j600_set_hw_filters(priv);
 
-	/* PHANA */
+	/* PHANA (autonegotiation adevrtisement) */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
 
 	/* PHCON1 */
@@ -864,6 +869,11 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	return 1;
 }
 
+/**
+ * Enable interrupts and receive logic.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_hw_enable(struct enc424j600_net *priv)
 {
 	if (netif_msg_hw(priv))
@@ -884,6 +894,11 @@ static void enc424j600_hw_enable(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Disable receive and interrupts.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_hw_disable(struct enc424j600_net *priv)
 {
 	if (netif_msg_hw(priv))
@@ -903,6 +918,19 @@ static void enc424j600_hw_disable(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Store the settings to the enc424j600 structure, but don't send them to 
+ * the chip yet.
+ * This function requires the chip to be disabled.
+ *
+ * \todo This whole thing looks a little fishy.
+ * When will the data be stored to chip?
+ * Parameters are designed to be taken from struct ethtool_cmd.
+ * \param ndev The network device.
+ * \param autoneg AUTONEG_ENABLE if autonegotiation should be enabled.
+ * \param speed SPEED_10 or SPEED_100
+ * \param duplex DUPLEX_FULL if we shoud work in full duplex.
+ */
 static int
 enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 {
@@ -936,8 +964,12 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	return ret;
 }
 
-/*
- * Receive Status vector
+/**
+ * Debugging function that prints the receive status vector in a readable form.
+ * \param func Function name from which dump_rsv is called.
+ * \param pk_ptr Position of the next packet in chip SRAM.
+ * \param len Length of the packet.
+ * \param rxstat Receive status bits.
  */
 static void enc424j600_dump_rsv(const char *func, u16 pk_ptr, int len,
 	u32 rxstat)
@@ -973,6 +1005,12 @@ static void enc424j600_dump_rsv(const char *func, u16 pk_ptr, int len,
 #undef PRINT_RSV_BIT
 }
 
+/**
+ * Debug function; print the received packet along with hex dump of the packet data.
+ * \param func Function name from which dump_rsv is called.
+ * \param len Length of the packet.
+ * \param data Packet data.
+ */
 static void dump_packet(const char *func, int len, const char *data)
 {
 	printk(KERN_DEBUG DRV_NAME ": %s - packet len:%d\n", func, len);
@@ -980,10 +1018,10 @@ static void dump_packet(const char *func, int len, const char *data)
 			data, len, true);
 }
 
-/*
- * Hardware receive function.
- * Read the buffer memory, update the FIFO pointer to free the buffer,
- * check the status vector and decrement the packet counter.
+/**
+ * Receive single packet from the chip.
+ * \note Datasheet: 9.2.2
+ * \param ndev The network device.
  */
 static void enc424j600_hw_rx(struct net_device *ndev)
 {
@@ -1040,10 +1078,10 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 			netif_rx_ni(skb);
 		}
 	}
+
 	/*
 	 * Move the RX read pointer to the start of the next
 	 * received packet.
-	 * This frees the memory we just read out
 	 */
 	priv->next_pk_ptr = next_packet;
 
@@ -1054,8 +1092,11 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 	enc424j600_set_bits(priv, ECON1H, PKTDEC);
 }
 
-/*
- * Access the PHY to determine link status
+/**
+ * Determine link and autonegotiation status.
+ * Updates the fields in priv, also correctly sets duplex bits in MAC
+ * according to PHY.
+ * \param priv The enc424j600 structure.
  */
 static void enc424j600_check_link_status(struct enc424j600_net *priv)
 {
@@ -1097,6 +1138,12 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 	}
 }
 
+/**
+ * Finish transmission of a packet and count it.
+ * If packet transmission ended in an error, then free the skb.
+ * \param priv The enc424j600 structure.
+ * \param err Count this TX as an error and free the skb?
+ */
 static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
 {
 	struct net_device *ndev = priv->netdev;
@@ -1116,6 +1163,12 @@ static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
 	netif_wake_queue(ndev);
 }
 
+/**
+ * Handle an abborted receive.
+ * Only counts it ...
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
 {
 	if (netif_msg_intr(priv))
@@ -1126,6 +1179,11 @@ static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Handle link status change.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_int_link_handler(struct enc424j600_net *priv)
 {
 	if (netif_msg_intr(priv))
@@ -1139,6 +1197,11 @@ static void enc424j600_int_link_handler(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Handle completed transmit.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
 {
 	if (netif_msg_intr(priv))
@@ -1150,6 +1213,13 @@ static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Handle failed transmit.
+ * Diagnoses case of failure, tries retransmitting
+ * or abborts transmit.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_int_tx_err_handler(struct enc424j600_net *priv)
 {
 	u16 etxstat;
@@ -1183,6 +1253,14 @@ static void enc424j600_int_tx_err_handler(struct enc424j600_net *priv)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Handle receive.
+ * Reads the number of unprocessed received packets and calls
+ * enc424j600_hw_rx for each of them.
+ * \note Locks the driver's mutex.
+ * \param priv The enc424j600 structure.
+ * \return Number of packets received.
+ */
 static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
 {
 	uint8_t pk_counter;
@@ -1212,6 +1290,14 @@ static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
 	return ret;
 }
 
+/**
+ * Main handler function for the interrupt work queue.
+ * Reads the interrupt flags and calls appropriate handlers.
+ * Chip's global interrupt flag is down during all this.
+ * \bug There is a window for race condition in this function.
+ * See \ref encrace.
+ * \param work Work queue structure associated with the interrupt queue.
+ */
 static void enc424j600_irq_work_handler(struct work_struct *work)
 {
 	struct enc424j600_net *priv =
@@ -1272,10 +1358,10 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 		printk(KERN_DEBUG DRV_NAME ": %s() exit\n", __func__);
 }
 
-/*
- * Hardware transmit function.
- * Fill the buffer memory and send the contents of the transmit buffer
- * onto the network
+/**
+ * Send single packet from priv->tx_skb.
+ * Writes the packet to chip SRAM and 
+ * \param priv The enc424j600 structure.
  */
 static void enc424j600_hw_tx(struct enc424j600_net *priv)
 {
@@ -1335,17 +1421,15 @@ static void enc424j600_tx_work_handler(struct work_struct *work)
 	mutex_unlock(&priv->lock);
 }
 
+/**
+ * Interrupt handler for the interrupts from enc424j600.
+ * Only launches the irq work queue.
+ * See \ref encint
+ */
 static irqreturn_t enc424j600_irq(int irq, void *dev_id)
 {
 	struct enc424j600_net *priv = dev_id;
 
-	/*
-	 * Can't do anything in interrupt context because we need to
-	 * block (spi_sync() is blocking) so fire of the interrupt
-	 * handling workqueue.
-	 * Remember that we access enc424j600 registers through SPI bus
-	 * via spi_sync() call.
-	 */
 	schedule_work(&priv->irq_work);
 
 	return IRQ_HANDLED;

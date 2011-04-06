@@ -15,4 +15,15 @@ This driver was based on enc28j60 driver by Claudio Lanconelli.
 - PHY registers
 - Locking
 - Low power
+- Autonegotiation
+- Huge frames
+- Link settings (enc424j600_setlink)
+- Tx errors
+
+\section encint Interrupts & work queues
+- Interrupt work queue.
+- Tx work queue
+
+\section encrace RX interrupt race condition
+- Race condition in receive interrupts.
 */
