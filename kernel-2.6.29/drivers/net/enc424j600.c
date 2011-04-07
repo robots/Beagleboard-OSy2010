@@ -864,6 +864,9 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 		LINKIE << 8 | PKTIE | TXIE |
 		TXABTIE | RXABTIE);
 
+	/* Set the tx pointer to start of general purpose SRAM area */
+	enc424j600_write_16b_sfr(priv, ETXSTL, SRAM_GP_START);
+
 	mutex_unlock(&priv->lock);
 
 	return 1;
@@ -1377,9 +1380,6 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 	enc424j600_write_sram(priv,
 		priv->tx_skb->data, priv->tx_skb->len,
 		SRAM_GP_START);
-
-	/* Set the tx pointer to start of general purpose SRAM area */
-	enc424j600_write_16b_sfr(priv, ETXSTL, SRAM_GP_START);
 
 	/* Write the transfer length */
 	enc424j600_write_16b_sfr(priv, ETXLENL, priv->tx_skb->len);
