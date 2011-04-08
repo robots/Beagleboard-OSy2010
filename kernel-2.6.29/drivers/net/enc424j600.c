@@ -940,8 +940,6 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int ret = 0;
 
-	mutex_lock(&priv->lock);
-
 	if (!priv->hw_enable) {
 		/* link is in low power mode now; duplex setting
 		 * will take effect on next enc424j600_hw_init().
@@ -962,7 +960,6 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 				"to set link mode\n");
 		ret = -EBUSY;
 	}
-	mutex_unlock(&priv->lock);
 
 	return ret;
 }
@@ -1177,9 +1174,7 @@ static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
 			": intRXAbt\n");
-	mutex_lock(&priv->lock);
 	priv->netdev->stats.rx_dropped++;
-	mutex_unlock(&priv->lock);
 }
 
 /**
@@ -1211,9 +1206,7 @@ static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
 		printk(KERN_DEBUG DRV_NAME
 			": intTX\n");
 
-	mutex_lock(&priv->lock);
 	enc424j600_tx_clear(priv, false);
-	mutex_unlock(&priv->lock);
 }
 
 /**
@@ -1544,8 +1537,6 @@ static void enc424j600_set_multicast_list(struct net_device *ndev)
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int oldfilter = priv->rxfilter;
 
-	mutex_lock(&priv->lock);
-
 	if (ndev->flags & IFF_PROMISC) {
 		if (netif_msg_link(priv))
 			dev_info(&ndev->dev, "promiscuous mode\n");
@@ -1563,8 +1554,6 @@ static void enc424j600_set_multicast_list(struct net_device *ndev)
 
 	if (oldfilter != priv->rxfilter)
 		schedule_work(&priv->setrx_work);
-
-	mutex_unlock(&priv->lock);
 }
 
 static void enc424j600_setrx_work_handler(struct work_struct *work)
