@@ -797,7 +797,6 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	priv->tx_retry_count = 0;
 	priv->max_pk_counter = 0;
 	priv->rxfilter = RXFILTER_NORMAL;
-	priv->autoneg = 1;
 
 	enc424j600_soft_reset(priv);
 
@@ -826,18 +825,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* PHANA (autonegotiation adevrtisement) */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
 
-	/* PHCON1 */
-	phcon1 = 0;
-	if (priv->autoneg) {
-		/* Enable autonegotiation and renegotiate */
-		phcon1 |= ANEN | RENEG;
-	} else {
-		if (priv->speed100)
-			phcon1 |= SPD100;
-		if  (priv->full_duplex)
-			phcon1 |= PFULDPX;
-	}
-	enc424j600_phy_write(priv, PHCON1, phcon1);
+	enc424j600_setlink(priv->ndev, AUTONEG_ENABLE, SPEED_100, DUPLEX_FULL);
 
 	/* MACON2
 	 * defer transmission if collision occurs (only for half duplex)
@@ -845,8 +833,6 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	 * enable receiving huge frames (instead of limiting packet size) */
 	macon2 = MACON2_DEFER | PADCFG2 | PADCFG0 | TXCRCEN | HFRMEN;
 	enc424j600_write_16b_sfr(priv, MACON2L, macon2);
-
-	enc424j600_check_link_status(priv);
 
 	/* MAIPGL
 	 * Recomended values for inter packet gaps */
@@ -939,27 +925,40 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 {
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int ret = 0;
+	u16 phcon1 = 0;
 
-	if (!priv->hw_enable) {
-		/* link is in low power mode now; duplex setting
-		 * will take effect on next enc424j600_hw_init().
-		 */
-		if (speed == SPEED_10 || speed == SPEED_100) {
-			priv->autoneg = (autoneg == AUTONEG_ENABLE);
-			priv->full_duplex = (duplex == DUPLEX_FULL);
-			priv->speed100 = (speed == SPEED_100);
-		} else {
-			if (netif_msg_link(priv))
-				dev_warn(&ndev->dev,
-					"unsupported link setting\n");
-			ret = -EOPNOTSUPP;
-		}
-	} else {
+	if (priv->hw_enable) {
 		if (netif_msg_link(priv))
 			dev_warn(&ndev->dev, "Warning: hw must be disabled "
 				"to set link mode\n");
-		ret = -EBUSY;
+		return -EBUSY;
 	}
+
+	/* link is in low power mode now; duplex setting
+	 * will take effect on next enc424j600_hw_init().
+	 */
+	if (speed != SPEED_10 && speed != SPEED_100) {
+		if (netif_msg_link(priv))
+			dev_warn(&ndev->dev,
+				"unsupported link setting\n");
+		return -EOPNOTSUPP;
+	}
+	
+	priv->autoneg = (autoneg == AUTONEG_ENABLE);
+
+	if (priv->autoneg) {
+		/* Enable autonegotiation and renegotiate */
+		phcon1 |= ANEN | RENEG;
+	} else {
+		priv->full_duplex = (duplex == DUPLEX_FULL);
+		priv->speed100 = (speed == SPEED_100);
+
+		if (priv->speed100)
+			phcon1 |= SPD100;
+		if  (priv->full_duplex)
+			phcon1 |= PFULDPX;
+	}
+	enc424j600_phy_write(priv, PHCON1, phcon1);
 
 	return ret;
 }
@@ -1102,6 +1101,7 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 {
 	u8 estath;
 	u16 phcon1;
+	u16 phstat3;
 
 	enc424j600_read_8b_sfr(priv, ESTATH, &estath);
 	if (estath & PHYLNK) {
@@ -1115,17 +1115,16 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 
 				enc424j600_write_16b_sfr(priv, MABBIPGL,
 					MABBIPG_FULL_VAL);
-
-				priv->full_duplex = true;
 			} else {
 				enc424j600_write_16b_sfr(priv, MABBIPGL,
 					MABBIPG_HALF_VAL);
-
-				priv->full_duplex = false;
 			}
 
-			enc424j600_phy_read(priv, PHCON1, &phcon1);
-			priv->speed100 = (phcon1 & SPD100) != 0;
+			enc424j600_phy_read(priv, PHSTAT3, &phstat3);
+
+			priv->full_duplex = !!(phstat3 & SPDDPX2);
+			priv->speed100 = !!(phstat3 & SPDDPX1);
+
 
 		}
 		netif_carrier_on(priv->netdev);

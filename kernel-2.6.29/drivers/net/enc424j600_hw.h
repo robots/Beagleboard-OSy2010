@@ -391,7 +391,7 @@
 #define RENEG		(1 << 9)
 #define PFULDPX		(1 << 8)
 
-/* PHSTAT */
+/* PHSTAT1 */
 #define FULL100		(1 << 14)
 #define HALF100		(1 << 13)
 #define FULL10		(1 << 12)
@@ -401,6 +401,11 @@
 #define ANABLE		(1 << 3)
 #define LLSTAT		(1 << 2)
 #define EXTREGS		(1 << 0)
+
+/* PHSTAT3 */
+#define SPDDPX2		(1 << 4)
+#define SPDDPX1		(1 << 3)
+#define SPDDPX0		(1 << 2)
 
 #define EUDAST_TEST_VAL	0x1234
 
