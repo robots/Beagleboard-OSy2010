@@ -1363,7 +1363,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 
 /**
  * Send single packet from priv->tx_skb.
- * Writes the packet to chip SRAM and 
+ * Writes the packet to chip SRAM and starts transmit.
  * \param priv The enc424j600 structure.
  */
 static void enc424j600_hw_tx(struct enc424j600_net *priv)
@@ -1389,8 +1389,13 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 
 }
 
-/*
- * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+/**
+ * Send the packet to the line.
+ * Stops netif queue, stores the skb and schedules the tx work queue.
+ * \note This function is a part of interface to kernel
+ * exported in enc424j600_netdev_ops.
+ * \param skb Socket buffer to transmit.
+ * \param ndev The network device.
  */
 static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *ndev)
 {
@@ -1410,13 +1415,17 @@ static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *ndev)
 	return 0;
 }
 
+/**
+ * Handler of the TX work queue.
+ * \note Locks the driver's mutex.
+ * \param work TX work queue structure.
+ */
 static void enc424j600_tx_work_handler(struct work_struct *work)
 {
 	struct enc424j600_net *priv =
 		container_of(work, struct enc424j600_net, tx_work);
 
 	mutex_lock(&priv->lock);
-	/* actual delivery of data */
 	enc424j600_hw_tx(priv);
 	mutex_unlock(&priv->lock);
 }
@@ -1436,7 +1445,10 @@ static irqreturn_t enc424j600_irq(int irq, void *dev_id)
 }
 
 /**
- * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+ * Schedule abortion of the current transmit.
+ * \note This function is a part of interface to kernel
+ * exported in enc424j600_netdev_ops.
+ * \param ndev The network device.
  */
 static void enc424j600_tx_timeout(struct net_device *ndev)
 {
@@ -1457,7 +1469,9 @@ static void enc424j600_tx_timeout(struct net_device *ndev)
  * This routine should set everything up anew at each open, even
  * registers that "should" only need to be set once at boot, so that
  * there is non-reboot way to recover if something goes wrong.
+ *
  * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+ * \param ndev The network device.
  */
 static int enc424j600_net_open(struct net_device *ndev)
 {
@@ -1500,7 +1514,10 @@ static int enc424j600_net_open(struct net_device *ndev)
 
 /**
  * The inverse routine to net_open().
- * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+ * Disables receive and puts chip into low power mode.
+ * \note This function is a part of interface to kernel
+ * exported in enc424j600_netdev_ops.
+ * \param ndev The network device.
  */
 static int enc424j600_net_close(struct net_device *ndev)
 {
@@ -1516,9 +1533,11 @@ static int enc424j600_net_close(struct net_device *ndev)
 	return 0;
 }
 
-/*
- * Set or clear the multicast filter for this adapter
- * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
+/**
+ * Set or clear the multicast filter in the chip according to 
+ * settings in ndev.
+ * \note This function is a part of interface to kernel
+ * exported in enc424j600_netdev_ops.
  */
 static void enc424j600_set_multicast_list(struct net_device *ndev)
 {
