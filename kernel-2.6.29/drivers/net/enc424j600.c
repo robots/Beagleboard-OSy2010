@@ -775,6 +775,23 @@ static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 	enc424j600_clear_unprocessed_rx_area(priv);
 }
 
+static void enc424j600_hw_setlink(struct enc424j600_net *priv)
+{
+	u16 phcon1 = 0;
+
+	if (priv->autoneg) {
+		/* Enable autonegotiation and renegotiate */
+		phcon1 |= ANEN | RENEG;
+	} else {
+		if (priv->speed100)
+			phcon1 |= SPD100;
+		if  (priv->full_duplex)
+			phcon1 |= PFULDPX;
+	}
+	enc424j600_phy_write(priv, PHCON1, phcon1);
+
+}
+
 /**
  * Store the settings to the enc424j600 structure, but don't send them to 
  * the chip yet.
@@ -793,7 +810,6 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 {
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int ret = 0;
-	u16 phcon1 = 0;
 
 	if (priv->hw_enable) {
 		if (netif_msg_link(priv))
@@ -813,20 +829,10 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	}
 	
 	priv->autoneg = (autoneg == AUTONEG_ENABLE);
+	priv->full_duplex = (duplex == DUPLEX_FULL);
+	priv->speed100 = (speed == SPEED_100);
 
-	if (priv->autoneg) {
-		/* Enable autonegotiation and renegotiate */
-		phcon1 |= ANEN | RENEG;
-	} else {
-		priv->full_duplex = (duplex == DUPLEX_FULL);
-		priv->speed100 = (speed == SPEED_100);
-
-		if (priv->speed100)
-			phcon1 |= SPD100;
-		if  (priv->full_duplex)
-			phcon1 |= PFULDPX;
-	}
-	enc424j600_phy_write(priv, PHCON1, phcon1);
+	enc424j600_hw_setlink(priv);
 
 	return ret;
 }
@@ -880,7 +886,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* PHANA (autonegotiation adevrtisement) */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
 
-	enc424j600_setlink(priv->netdev, AUTONEG_ENABLE, SPEED_100, DUPLEX_FULL);
+	enc424j600_hw_setlink(priv);
 
 	/* MACON2
 	 * defer transmission if collision occurs (only for half duplex)
@@ -1117,14 +1123,13 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 				enc424j600_write_16b_sfr(priv, MABBIPGL,
 					MABBIPG_HALF_VAL);
 			}
-
-			enc424j600_phy_read(priv, PHSTAT3, &phstat3);
-
-			priv->full_duplex = !!(phstat3 & SPDDPX2);
-			priv->speed100 = !!(phstat3 & SPDDPX1);
-
-
 		}
+
+		enc424j600_phy_read(priv, PHSTAT3, &phstat3);
+
+		priv->full_duplex = !!(phstat3 & SPDDPX2);
+		priv->speed100 = !!(phstat3 & SPDDPX1);
+
 		netif_carrier_on(priv->netdev);
 		if (netif_msg_ifup(priv))
 			dev_info(&(priv->netdev->dev), "link up\n");
@@ -1647,7 +1652,7 @@ static int enc424j600_chipset_init(struct net_device *dev)
 {
 	struct enc424j600_net *priv = netdev_priv(dev);
 	int ret;
-
+	
 	ret = enc424j600_hw_init(priv);
 	enc424j600_get_hw_macaddr(dev);
 
@@ -1738,6 +1743,10 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 		}
 	}
 
+	priv->autoneg = 1;
+	priv->speed100 = 1;
+	priv->full_duplex = 1;
+
 	if (!enc424j600_chipset_init(dev)) {
 		if (netif_msg_probe(priv))
 			dev_info(&spi->dev, DRV_NAME " chip not found\n");
@@ -1757,7 +1766,7 @@ static int __devinit enc424j600_probe(struct spi_device *spi)
 		goto error_irq;
 	}
 
-	dev->if_port = IF_PORT_10BASET; /* TODO: ?? */
+	dev->if_port = IF_PORT_10BASET;
 	dev->irq = spi->irq;
 	dev->netdev_ops = &enc424j600_netdev_ops;
 	dev->watchdog_timeo = TX_TIMEOUT;
