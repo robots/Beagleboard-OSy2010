@@ -4,6 +4,8 @@ INPUT = \
 	../STM32_BB/ \
 	../kernel-2.6.29/drivers/net/enc424j600.c \
 	../kernel-2.6.29/drivers/net/enc424j600_hw.h \
+	../kernel-2.6.29/drivers/net/can/stm32bb.c \
+	../kernel-2.6.29/drivers/net/can/stm32bb.h \
 	pages
 EXCLUDE = \
 	../STM32_BB/lib/
