@@ -776,6 +776,62 @@ static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 }
 
 /**
+ * Store the settings to the enc424j600 structure, but don't send them to 
+ * the chip yet.
+ * This function requires the chip to be disabled.
+ *
+ * \todo This whole thing looks a little fishy.
+ * When will the data be stored to chip?
+ * Parameters are designed to be taken from struct ethtool_cmd.
+ * \param ndev The network device.
+ * \param autoneg AUTONEG_ENABLE if autonegotiation should be enabled.
+ * \param speed SPEED_10 or SPEED_100
+ * \param duplex DUPLEX_FULL if we shoud work in full duplex.
+ */
+static int
+enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
+{
+	struct enc424j600_net *priv = netdev_priv(ndev);
+	int ret = 0;
+	u16 phcon1 = 0;
+
+	if (priv->hw_enable) {
+		if (netif_msg_link(priv))
+			dev_warn(&ndev->dev, "Warning: hw must be disabled "
+				"to set link mode\n");
+		return -EBUSY;
+	}
+
+	/* link is in low power mode now; duplex setting
+	 * will take effect on next enc424j600_hw_init().
+	 */
+	if (speed != SPEED_10 && speed != SPEED_100) {
+		if (netif_msg_link(priv))
+			dev_warn(&ndev->dev,
+				"unsupported link setting\n");
+		return -EOPNOTSUPP;
+	}
+	
+	priv->autoneg = (autoneg == AUTONEG_ENABLE);
+
+	if (priv->autoneg) {
+		/* Enable autonegotiation and renegotiate */
+		phcon1 |= ANEN | RENEG;
+	} else {
+		priv->full_duplex = (duplex == DUPLEX_FULL);
+		priv->speed100 = (speed == SPEED_100);
+
+		if (priv->speed100)
+			phcon1 |= SPD100;
+		if  (priv->full_duplex)
+			phcon1 |= PFULDPX;
+	}
+	enc424j600_phy_write(priv, PHCON1, phcon1);
+
+	return ret;
+}
+
+/**
  * Reset and initialize enc424j600, but don't enable interrupts and don't
  * start receiving yet.
  * This function should get the chip from any state to a reasonable default
@@ -787,7 +843,6 @@ static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 static int enc424j600_hw_init(struct enc424j600_net *priv)
 {
 	u8 eidledl;
-	u16 phcon1;
 	u16 macon2;
 
 	mutex_lock(&priv->lock);
@@ -825,7 +880,7 @@ static int enc424j600_hw_init(struct enc424j600_net *priv)
 	/* PHANA (autonegotiation adevrtisement) */
 	enc424j600_phy_write(priv, PHANA, PHANA_DEFAULT);
 
-	enc424j600_setlink(priv->ndev, AUTONEG_ENABLE, SPEED_100, DUPLEX_FULL);
+	enc424j600_setlink(priv->netdev, AUTONEG_ENABLE, SPEED_100, DUPLEX_FULL);
 
 	/* MACON2
 	 * defer transmission if collision occurs (only for half duplex)
@@ -905,62 +960,6 @@ static void enc424j600_hw_disable(struct enc424j600_net *priv)
 	priv->hw_enable = false;
 
 	mutex_unlock(&priv->lock);
-}
-
-/**
- * Store the settings to the enc424j600 structure, but don't send them to 
- * the chip yet.
- * This function requires the chip to be disabled.
- *
- * \todo This whole thing looks a little fishy.
- * When will the data be stored to chip?
- * Parameters are designed to be taken from struct ethtool_cmd.
- * \param ndev The network device.
- * \param autoneg AUTONEG_ENABLE if autonegotiation should be enabled.
- * \param speed SPEED_10 or SPEED_100
- * \param duplex DUPLEX_FULL if we shoud work in full duplex.
- */
-static int
-enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
-{
-	struct enc424j600_net *priv = netdev_priv(ndev);
-	int ret = 0;
-	u16 phcon1 = 0;
-
-	if (priv->hw_enable) {
-		if (netif_msg_link(priv))
-			dev_warn(&ndev->dev, "Warning: hw must be disabled "
-				"to set link mode\n");
-		return -EBUSY;
-	}
-
-	/* link is in low power mode now; duplex setting
-	 * will take effect on next enc424j600_hw_init().
-	 */
-	if (speed != SPEED_10 && speed != SPEED_100) {
-		if (netif_msg_link(priv))
-			dev_warn(&ndev->dev,
-				"unsupported link setting\n");
-		return -EOPNOTSUPP;
-	}
-	
-	priv->autoneg = (autoneg == AUTONEG_ENABLE);
-
-	if (priv->autoneg) {
-		/* Enable autonegotiation and renegotiate */
-		phcon1 |= ANEN | RENEG;
-	} else {
-		priv->full_duplex = (duplex == DUPLEX_FULL);
-		priv->speed100 = (speed == SPEED_100);
-
-		if (priv->speed100)
-			phcon1 |= SPD100;
-		if  (priv->full_duplex)
-			phcon1 |= PFULDPX;
-	}
-	enc424j600_phy_write(priv, PHCON1, phcon1);
-
-	return ret;
 }
 
 /**
@@ -1100,7 +1099,6 @@ static void enc424j600_hw_rx(struct net_device *ndev)
 static void enc424j600_check_link_status(struct enc424j600_net *priv)
 {
 	u8 estath;
-	u16 phcon1;
 	u16 phstat3;
 
 	enc424j600_read_8b_sfr(priv, ESTATH, &estath);
