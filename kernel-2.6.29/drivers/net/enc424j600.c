@@ -811,13 +811,6 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
 	struct enc424j600_net *priv = netdev_priv(ndev);
 	int ret = 0;
 
-	if (priv->hw_enable) {
-		if (netif_msg_link(priv))
-			dev_warn(&ndev->dev, "Warning: hw must be disabled "
-				"to set link mode\n");
-		return -EBUSY;
-	}
-
 	/* link is in low power mode now; duplex setting
 	 * will take effect on next enc424j600_hw_init().
 	 */
