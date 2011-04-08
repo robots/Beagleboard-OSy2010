@@ -1392,14 +1392,14 @@ static void enc424j600_hw_tx(struct enc424j600_net *priv)
 /*
  * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
  */
-static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *dev)
+static int enc424j600_send_packet(struct sk_buff *skb, struct net_device *ndev)
 {
-	struct enc424j600_net *priv = netdev_priv(dev);
+	struct enc424j600_net *priv = netdev_priv(ndev);
 
 	if (netif_msg_tx_queued(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
-	netif_stop_queue(dev);
+	netif_stop_queue(ndev);
 
 	/* save the timestamp */
 	priv->netdev->trans_start = jiffies;
@@ -1459,17 +1459,17 @@ static void enc424j600_tx_timeout(struct net_device *ndev)
  * there is non-reboot way to recover if something goes wrong.
  * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
  */
-static int enc424j600_net_open(struct net_device *dev)
+static int enc424j600_net_open(struct net_device *ndev)
 {
-	struct enc424j600_net *priv = netdev_priv(dev);
+	struct enc424j600_net *priv = netdev_priv(ndev);
 
 	if (netif_msg_drv(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
-	if (!is_valid_ether_addr(dev->dev_addr)) {
+	if (!is_valid_ether_addr(ndev->dev_addr)) {
 		if (netif_msg_ifup(priv))
-			dev_err(&dev->dev, "invalid MAC address %pM\n",
-				dev->dev_addr);
+			dev_err(&ndev->dev, "invalid MAC address %pM\n",
+				ndev->dev_addr);
 		return -EADDRNOTAVAIL;
 	}
 	/* Reset the hardware here (and take it out of low power mode) */
@@ -1477,11 +1477,11 @@ static int enc424j600_net_open(struct net_device *dev)
 	enc424j600_hw_disable(priv);
 	if (!enc424j600_hw_init(priv)) {
 		if (netif_msg_ifup(priv))
-			dev_err(&dev->dev, "hw_reset() failed\n");
+			dev_err(&ndev->dev, "hw_reset() failed\n");
 		return -EINVAL;
 	}
 	/* Update the MAC address (in case user has changed it) */
-	enc424j600_set_hw_macaddr(dev);
+	enc424j600_set_hw_macaddr(ndev);
 	/* Enable interrupts */
 	enc424j600_hw_enable(priv);
 
@@ -1493,7 +1493,7 @@ static int enc424j600_net_open(struct net_device *dev)
 	/* We are now ready to accept transmit requests from
 	 * the queueing layer of the networking.
 	 */
-	netif_start_queue(dev);
+	netif_start_queue(ndev);
 
 	return 0;
 }
@@ -1502,16 +1502,16 @@ static int enc424j600_net_open(struct net_device *dev)
  * The inverse routine to net_open().
  * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
  */
-static int enc424j600_net_close(struct net_device *dev)
+static int enc424j600_net_close(struct net_device *ndev)
 {
-	struct enc424j600_net *priv = netdev_priv(dev);
+	struct enc424j600_net *priv = netdev_priv(ndev);
 
 	if (netif_msg_drv(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
 	enc424j600_hw_disable(priv);
 	enc424j600_lowpower_enable(priv);
-	netif_stop_queue(dev);
+	netif_stop_queue(ndev);
 
 	return 0;
 }
@@ -1520,25 +1520,25 @@ static int enc424j600_net_close(struct net_device *dev)
  * Set or clear the multicast filter for this adapter
  * \note This function is a part of interface to kernel exported in enc424j600_netdev_ops.
  */
-static void enc424j600_set_multicast_list(struct net_device *dev)
+static void enc424j600_set_multicast_list(struct net_device *ndev)
 {
-	struct enc424j600_net *priv = netdev_priv(dev);
+	struct enc424j600_net *priv = netdev_priv(ndev);
 	int oldfilter = priv->rxfilter;
 
 	mutex_lock(&priv->lock);
 
-	if (dev->flags & IFF_PROMISC) {
+	if (ndev->flags & IFF_PROMISC) {
 		if (netif_msg_link(priv))
-			dev_info(&dev->dev, "promiscuous mode\n");
+			dev_info(&ndev->dev, "promiscuous mode\n");
 		priv->rxfilter = RXFILTER_PROMISC;
-	} else if ((dev->flags & IFF_ALLMULTI) || dev->mc_count) {
+	} else if ((ndev->flags & IFF_ALLMULTI) || ndev->mc_count) {
 		if (netif_msg_link(priv))
-			dev_info(&dev->dev, "%smulticast mode\n",
-				(dev->flags & IFF_ALLMULTI) ? "all-" : "");
+			dev_info(&ndev->dev, "%smulticast mode\n",
+				(ndev->flags & IFF_ALLMULTI) ? "all-" : "");
 		priv->rxfilter = RXFILTER_MULTI;
 	} else {
 		if (netif_msg_link(priv))
-			dev_info(&dev->dev, "normal mode\n");
+			dev_info(&ndev->dev, "normal mode\n");
 		priv->rxfilter = RXFILTER_NORMAL;
 	}
 
