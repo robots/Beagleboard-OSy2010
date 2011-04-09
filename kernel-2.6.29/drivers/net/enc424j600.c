@@ -1093,12 +1093,15 @@ static void enc424j600_hw_rx(struct net_device *ndev)
  * Determine link and autonegotiation status.
  * Updates the fields in priv, also correctly sets duplex bits in MAC
  * according to PHY.
+ * \note Locks the driver's mutex.
  * \param priv The enc424j600 structure.
  */
 static void enc424j600_check_link_status(struct enc424j600_net *priv)
 {
 	u8 estath;
 	u16 phstat3;
+
+	mutex_lock(&priv->lock);
 
 	enc424j600_read_8b_sfr(priv, ESTATH, &estath);
 	if (estath & PHYLNK) {
@@ -1131,6 +1134,8 @@ static void enc424j600_check_link_status(struct enc424j600_net *priv)
 			dev_info(&(priv->netdev->dev), "link down\n");
 		netif_carrier_off(priv->netdev);
 	}
+
+	mutex_unlock(&priv->lock);
 }
 
 /**
@@ -1173,7 +1178,6 @@ static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
 
 /**
  * Handle link status change.
- * \note Locks the driver's mutex.
  * \param priv The enc424j600 structure.
  */
 static void enc424j600_int_link_handler(struct enc424j600_net *priv)
@@ -1182,16 +1186,11 @@ static void enc424j600_int_link_handler(struct enc424j600_net *priv)
 		printk(KERN_DEBUG DRV_NAME
 			": intLINK\n");
 
-	mutex_lock(&priv->lock);
-	/* we check more than is necessary here --
-	 * only PHYLNK would be needed. */
 	enc424j600_check_link_status(priv);
-	mutex_unlock(&priv->lock);
 }
 
 /**
  * Handle completed transmit.
- * \note Locks the driver's mutex.
  * \param priv The enc424j600 structure.
  */
 static void enc424j600_int_tx_handler(struct enc424j600_net *priv)
@@ -1486,10 +1485,8 @@ static int enc424j600_net_open(struct net_device *ndev)
 	/* Enable interrupts */
 	enc424j600_hw_enable(priv);
 
-	mutex_lock(&priv->lock);
 	/* check link status */
 	enc424j600_check_link_status(priv);
-	mutex_unlock(&priv->lock);
 
 	/* We are now ready to accept transmit requests from
 	 * the queueing layer of the networking.
