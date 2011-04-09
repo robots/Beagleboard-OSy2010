@@ -629,7 +629,6 @@ static int enc424j600_set_hw_macaddr(struct net_device *ndev)
 {
 	struct enc424j600_net *priv = netdev_priv(ndev);
 
-
 	mutex_lock(&priv->lock);
 
 	if (priv->hw_enable) {
@@ -775,6 +774,11 @@ static void enc424j600_prepare_rx_buffer(struct enc424j600_net *priv)
 	enc424j600_clear_unprocessed_rx_area(priv);
 }
 
+/**
+ * Set the link settings (autoneg, speed and duplex) from priv
+ * to enc424j600.
+ * \param priv The enc424j600 structure.
+ */
 static void enc424j600_hw_setlink(struct enc424j600_net *priv)
 {
 	u16 phcon1 = 0;
@@ -793,13 +797,9 @@ static void enc424j600_hw_setlink(struct enc424j600_net *priv)
 }
 
 /**
- * Store the settings to the enc424j600 structure, but don't send them to 
- * the chip yet.
- * This function requires the chip to be disabled.
+ * Store the settings to the enc424j600 structure and send them to 
+ * the chip.
  *
- * \todo This whole thing looks a little fishy.
- * When will the data be stored to chip?
- * Parameters are designed to be taken from struct ethtool_cmd.
  * \param ndev The network device.
  * \param autoneg AUTONEG_ENABLE if autonegotiation should be enabled.
  * \param speed SPEED_10 or SPEED_100
@@ -834,7 +834,7 @@ enc424j600_setlink(struct net_device *ndev, u8 autoneg, u16 speed, u8 duplex)
  * Reset and initialize enc424j600, but don't enable interrupts and don't
  * start receiving yet.
  * This function should get the chip from any state to a reasonable default
- * configuration
+ * configuration.
  * \note Locks the driver's mutex.
  * \param priv The enc424j600 structure.
  * \return Zero on success, negative error code otherwise.
@@ -1161,7 +1161,6 @@ static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
 /**
  * Handle an abborted receive.
  * Only counts it ...
- * \note Locks the driver's mutex.
  * \param priv The enc424j600 structure.
  */
 static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
