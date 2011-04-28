@@ -1547,6 +1547,10 @@ static void enc424j600_set_multicast_list(struct net_device *ndev)
 		schedule_work(&priv->setrx_work);
 }
 
+/**
+ * Work queue handler for setting filters.
+ * \param work Work queue structure associated with the interrupt queue.
+ */
 static void enc424j600_setrx_work_handler(struct work_struct *work)
 {
 	struct enc424j600_net *priv =
@@ -1555,6 +1559,12 @@ static void enc424j600_setrx_work_handler(struct work_struct *work)
 	enc424j600_set_hw_filters(priv);
 }
 
+/**
+ * Restarting the chip.
+ * Has to lock rtnl lock, because closing and opening
+ * the device changes routing tables.
+ * \param work Work queue structure associated with the interrupt queue.
+ */
 static void enc424j600_restart_work_handler(struct work_struct *work)
 {
 	struct enc424j600_net *priv =
@@ -1648,6 +1658,9 @@ static int enc424j600_chipset_init(struct net_device *dev)
 	return ret;
 }
 
+/**
+ * Functions for netdev interface.
+ */
 static const struct net_device_ops enc424j600_netdev_ops = {
 	.ndo_open		= enc424j600_net_open,
 	.ndo_stop		= enc424j600_net_close,
@@ -1659,6 +1672,12 @@ static const struct net_device_ops enc424j600_netdev_ops = {
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
+/**
+ * Initialize the driver.
+ * Allocate memory, request irq, initialize work queues and initialize the 
+ * enc424j600 chip.
+ * \param spi Spi device where the chip is connected.
+ */
 static int __devinit enc424j600_probe(struct spi_device *spi)
 {
 	struct net_device *dev;
@@ -1791,6 +1810,9 @@ error_alloc:
 	return ret;
 }
 
+/**
+ * Deinitialize the driver, inverse to enc424j600_probe.
+ */
 static int __devexit enc424j600_remove(struct spi_device *spi)
 {
 	struct enc424j600_net *priv = dev_get_drvdata(&spi->dev);
