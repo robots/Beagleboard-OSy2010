@@ -1820,6 +1820,14 @@ static int __devexit enc424j600_remove(struct spi_device *spi)
 	if (netif_msg_drv(priv))
 		printk(KERN_DEBUG DRV_NAME ": remove\n");
 
+	if (!enc424j600_enable_dma) {
+		kfree(priv->spi_rx_buf);
+		kfree(priv->spi_tx_buf);
+	} else {
+		dma_free_coherent(&spi->dev, PAGE_SIZE,
+				  priv->spi_tx_buf, priv->spi_tx_dma);
+	}
+
 	unregister_netdev(priv->netdev);
 	free_irq(spi->irq, priv);
 	free_netdev(priv->netdev);
