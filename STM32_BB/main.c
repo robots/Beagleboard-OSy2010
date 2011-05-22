@@ -13,6 +13,7 @@
 
 #include "platform.h"
 
+/** Variable to be changed by GDB to enable debug mode */
 volatile uint32_t DEBUG_ON = 1;
 
 #ifdef VECT_TAB_RAM

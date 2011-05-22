@@ -22,7 +22,8 @@ void halt_faulty(struct stack_t *faulty_stack) {
 }
 
 
-void MemManage_Handler(void) {
+void MemManage_Handler(void)
+{
 		__asm volatile
 		(
 			" tst lr, #4                     \n"
@@ -36,7 +37,8 @@ void MemManage_Handler(void) {
 		);
 }
 
-void BusFault_Handler(void) {
+void BusFault_Handler(void)
+{
 		__asm volatile
 		(
 			" tst lr, #4                     \n"
@@ -51,7 +53,8 @@ void BusFault_Handler(void) {
 
 }
 
-void UsageFault_Handler(void) {
+void UsageFault_Handler(void)
+{
 		__asm volatile
 		(
 			" tst lr, #4                     \n"

@@ -33,4 +33,3 @@
 #define PWR_DATA   0x23 /* RO - 8 bytes */
 
 #endif
-

@@ -12,16 +12,33 @@
 
 #include "power.h"
 
+/** Measurements "register" */
 volatile struct pwr_data_t PWR_Measurement_Data = {0, 0, 0, 0};
+
+/** Power setting "register" */
 volatile struct pwr_i_set_t PWR_I_Set = {0, 0};
 
+/** Power control "register" */
 volatile uint16_t PWR_Control = 0x0000;
+
+/** Last state of Power control "register" */
 volatile uint16_t PWR_Control_Last = 0x0000;
+
+/** Power status "register" */
 volatile uint16_t PWR_Status = 0x0000;
 
 static NVIC_InitTypeDef EXT_Int;
 
-void PWR_Init() {
+/**
+ * Initialization of Power managenment.
+ *
+ * Current and voltage measurement is set to be automatically transfered
+ * from ADC to dedicated data structure by using DMA transfers. This
+ * approach off-loads CPU.
+ *
+ */
+void PWR_Init()
+{
 	ADC_InitTypeDef ADC_InitStructure;
 	DMA_InitTypeDef DMA_InitStructure = {
 		.DMA_PeripheralBaseAddr = (uint32_t)&ADC1->DR,
@@ -137,7 +154,7 @@ void PWR_Init() {
 	TIM_ARRPreloadConfig(TIM3, ENABLE);
 
 	TIM_OCStructInit(&TIM_OCInitStruct);
-	TIM_OCInitStruct.TIM_OutputState = TIM_OutputState_Enable; 
+	TIM_OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;
 	TIM_OCInitStruct.TIM_Pulse = 0;
 	TIM_OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
 	TIM_OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
@@ -154,7 +171,12 @@ void PWR_Init() {
 	PWR_ACSEL(Bit_RESET);
 }
 
-void PWR_ControlHandle() {
+/**
+ * Callback of PWR_CTRL "register" write. Handles enabling and disabling
+ * of various charger parts.
+ */
+void PWR_ControlHandle()
+{
 	int16_t change = PWR_Control_Last ^ PWR_Control;
 
 	if (change & PWR_CTRL_ADC) {
@@ -210,15 +232,22 @@ void PWR_ControlHandle() {
 	PWR_Control_Last = PWR_Control;
 }
 
-void PWR_CurrentHandle() {
+/**
+ * Power current change callback. Applies new PWM to change the charging current
+ */
+void PWR_CurrentHandle()
+{
 	// update PWM compare registers
 	TIM3->CCR3 = PWR_I_Set.i_bat & 0xFFF;
 	TIM3->CCR4 = PWR_I_Set.i_ac & 0xFFF;
 	TIM3->EGR |= TIM_EGR_UG;
 }
 
-/* Line 2 - ACPRES */
-void EXTI2_IRQHandler(void) {
+/**
+ * External interrupt 2 handler. Notifies host on changes on ACPRES line
+ */
+void EXTI2_IRQHandler(void)
+{
 	if (PWR_ACPRES() == Bit_SET) {
 		PWR_Status |= PWR_STAT_ACPRE;
 	} else {
@@ -232,8 +261,11 @@ void EXTI2_IRQHandler(void) {
 	EXTI_ClearITPendingBit(EXTI_Line2);
 }
 
-/* Line 5 - ALARM */
-void EXTI9_5_IRQHandler(void) { 
+/**
+ * External interrupt 5 handler. Notifies host on changes on ALARM line
+ */
+void EXTI9_5_IRQHandler(void)
+{
 	if (PWR_ALARM() == Bit_SET) {
 		PWR_Status |= PWR_STAT_ALARM;
 		LED_RED(Bit_RESET);
@@ -242,7 +274,7 @@ void EXTI9_5_IRQHandler(void) {
 		LED_RED(Bit_SET);
 	}
 
-	// notify host 
+	// notify host
 	SYS_SetIntFlag(SYS_INT_PWRALARM);
 	
 	// Clear the EXTI line 9 pending bit

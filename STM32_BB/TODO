@@ -1,7 +1,7 @@
 
 
 * CAN controller:
-error recovery needs more testing
+OK - more testing
 
 * Power:
 OK
@@ -10,4 +10,4 @@ OK
 OK
 
 * SPI_Slave:
-have the callbacks called from ISR  - test needed
+OK

@@ -13,23 +13,43 @@
 
 #include "cancontroller.h"
 
+/** Can status "register" */
 volatile uint16_t CANController_Status = 0x0000;
+
+/** Can control "register" */
 volatile uint16_t CANController_Control = 0x0000;
+
+/** Can control "register" - last state */
 volatile uint16_t CANController_Control_Last = 0x0000;
+
+/** Can error "register" */
 volatile uint32_t CANController_Error = 0x0000;
+
+/** Can error "register" - last state */
 volatile uint32_t CANController_Error_Last = 0x0000;
 
+/** Can timing "register" */
 volatile struct can_timing_t CANController_Timing;
 
+/** Internal counter for messages */
 volatile uint16_t RX0_Count = 0;
+
+/** Can message buffer for outgoing messages*/
 volatile struct can_message_t CANController_TXBuffer;
+
+/** Pointer to CAN message to be filled by host */
 volatile struct can_message_t *CANController_TX;
 
+/** Pointer to active incomming Can message buffer */
 struct can_buffer_t *CANController_RX0Buffer;
+
 struct can_buffer_t CANController_RX0Buffer0;
 struct can_buffer_t CANController_RX0Buffer1;
+
+/** Index of active receive Can message buffer */
 uint8_t CANController_RX0Active = 0;
 
+/** Default filter initialization structure - receive all */
 static CAN_FilterInitTypeDef CAN_FilterInitStructure = {
 	.CAN_FilterNumber = 0,
 	.CAN_FilterMode = CAN_FilterMode_IdMask,
@@ -41,11 +61,17 @@ static CAN_FilterInitTypeDef CAN_FilterInitStructure = {
 	.CAN_FilterFIFOAssignment = 0,
 	.CAN_FilterActivation = ENABLE,
 };
+
+/** Initialization structure for NVIC interrupt vector */
 static NVIC_InitTypeDef CAN_Int;
 
 static void CANController_HW_Reinit(int first);
 
-void CANController_Init(void) {
+/**
+ * Initialize bxCan hw in MCU. Sets correct pin muxing, resets "registers"
+ */
+void CANController_Init(void)
+{
 	GPIO_InitTypeDef GPIO_InitStructure = {
 		.GPIO_Speed = GPIO_Speed_50MHz,
 	};
@@ -79,8 +105,13 @@ void CANController_Init(void) {
 	CANController_HW_Reinit(1);
 }
 
-/* Initialization routine with workaround for the error managenment bug in the bxCAN */
-static void CANController_HW_Reinit(int first) {
+/**
+ * Reinitialization routine for bxCan hw. Part of workaround for bug
+ * present in hardware.
+ * \param first 1 if run from initialization, else 0
+ */
+static void CANController_HW_Reinit(int first)
+{
 	CAN_Int.NVIC_IRQChannelCmd = DISABLE;
 	CAN_Int.NVIC_IRQChannel = USB_HP_CAN1_TX_IRQn;
 	NVIC_Init(&CAN_Int);
@@ -131,14 +162,28 @@ static void CANController_HW_Reinit(int first) {
 
 }
 
-void CANController_StatusHandle() {
+/**
+ * Callback from spi_slave.c. This function is called *before* status "register"
+ * is read. Updates status to reflect the current state.
+ */
+void CANController_StatusHandle()
+{
 	if ((CAN1->MSR & CAN_MSR_INAK) && (CAN1->MCR & CAN_MCR_INRQ)) {
 		CANController_Status |= CAN_STAT_INAK;
 	}
+
+	// FIXME: remove once testing is done
 	CANController_Status |= CAN_STAT_RX1;
 }
 
-uint8_t CANController_Rx0Handle(void) {
+/**
+ * Callback from spi_slave.c. This function swaps read and write buffers.
+ * Invalidates whole write buffer.
+ * Called *before* can buffer is read by SPI.
+ * \return index of actual read buffer.
+ */
+uint8_t CANController_Rx0Handle(void)
+{
 	struct can_buffer_t *canbuf;
 
 	if (CANController_RX0Active == 0) {
@@ -158,8 +203,12 @@ uint8_t CANController_Rx0Handle(void) {
 	return CANController_RX0Active; 
 }
 
-/* new message to be transmitted */
-void CANController_TxHandle(void) {
+/**
+ * Callback from spi_slave.c. Called *after* new message to be transmitted
+ * has been received. Selects first free mailbox and fills it with data.
+ */
+void CANController_TxHandle(void)
+{
 	static uint16_t mailbox = 4;
 	if (CAN1->TSR & (CAN_TSR_TME0 | CAN_TSR_TME1 | CAN_TSR_TME2)) {
 		mailbox = (CAN1->TSR & CAN_TSR_CODE) >> 24;
@@ -199,7 +248,11 @@ void CANController_TxHandle(void) {
 	}
 }
 
-void CANController_ControlHandle(void) {
+/**
+ * Callback from spi_slave.c. Handles changes to the Can control "register"
+ */
+void CANController_ControlHandle(void)
+{
 	// select the changed bits
 	uint16_t change = CANController_Control_Last ^ CANController_Control;
 
@@ -254,9 +307,9 @@ void CANController_ControlHandle(void) {
 		// Error interrupt enable
 		if (change & CAN_CTRL_IERR) {
 			if (CANController_Control & CAN_CTRL_IERR) {
-				CAN1->IER |= CAN_IER_ERRIE; 
+				CAN1->IER |= CAN_IER_ERRIE;
 			} else {
-				CAN1->IER &= ~CAN_IER_ERRIE; 
+				CAN1->IER &= ~CAN_IER_ERRIE;
 			}
 		}
 	}
@@ -276,10 +329,12 @@ void CANController_ControlHandle(void) {
 	CANController_Control_Last = CANController_Control;
 }
 
-/* Changes the timming in the bxCAN module
+/**
+ * Callback from spi_slave.c. Changes the timming in the bxCAN module.
  * Side-effect: silent and loopback is disabled
  */
-void CANController_TimingHandle(void) {
+void CANController_TimingHandle(void)
+{
 
 	// Test if CAN1 is in initialization mode
 	if ((CAN1->MCR & CAN_MCR_INRQ) && (CAN1->MSR & CAN_MSR_INAK)) {
@@ -291,8 +346,12 @@ void CANController_TimingHandle(void) {
 	}
 }
 
-/* TX interrupt */
-void USB_HP_CAN1_TX_IRQHandler(void) {
+/**
+ * TX interrupt handler. Saves the status of last message send, and
+ * notifies host
+ */
+void USB_HP_CAN1_TX_IRQHandler(void)
+{
 	CANController_Status &= ~(CAN_STAT_ALST | CAN_STAT_TERR | CAN_STAT_TXOK);
 
 	if (CAN1->TSR & CAN_TSR_RQCP0) {
@@ -322,12 +381,15 @@ void USB_HP_CAN1_TX_IRQHandler(void) {
 	}
 }
 
-/* RX0 fifo interrupt
- * We cannot eat the whole FIFO, instead we let NVIC process higher prio
+/**
+ * RX0 fifo interrupt handler. Reads message from FIFO and places it in the
+ * CAN message buffer. Notifies host of new message.
+ *
+ * We cannot eat the whole FIFO, instead we let NVIC process higher priority
  * interrupt and return here later.
- * This is necessary for SPI_Slave to work !!!
  */
-void USB_LP_CAN1_RX0_IRQHandler(void) {
+void USB_LP_CAN1_RX0_IRQHandler(void)
+{
 	static struct can_message_t *RX0;
 
 	RX0 = CANBuf_GetWriteAddr(CANController_RX0Buffer);
@@ -382,12 +444,14 @@ void USB_LP_CAN1_RX0_IRQHandler(void) {
 
 }
 
-/* status change and error
- * This ISR is called periodicaly while error condition persists !
+/**
+ * Status change and error handler. This routine is called when error occures on
+ * CAN bus.
  *
- * FIXME: This is very much broken !!!
+ * FIXME: This is very much broken (HW side) !!!
  */
-void CAN1_SCE_IRQHandler(void) {
+void CAN1_SCE_IRQHandler(void)
+{
 	static uint16_t count = 0;
 
 	if (CAN1->ESR & (CAN_ESR_EWGF | CAN_ESR_EPVF | CAN_ESR_BOFF)) {
@@ -424,4 +488,3 @@ void CAN1_SCE_IRQHandler(void) {
 		CANController_Error_Last = CANController_Error;
 	}
 }
-

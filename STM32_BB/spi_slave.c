@@ -16,15 +16,20 @@
 #include "commands.h"
 #include "spi_slave.h"
 
-// temporary buffer to save interrupt flag and others
+/** Temporary buffer to save interrupt flag and others */
 volatile uint16_t SPI1_TX_Tmp;
 
+/** Dummy byte */
 volatile uint8_t dummy;
 
-/* callback */
+/** Pointer to callback function */
 DMA_Callback_t DMA_Callback = NULL;
 
-void SPI1_Slave_Init() {
+/**
+ * Initialization of SPI slave.
+ */
+void SPI1_Slave_Init()
+{
 	SPI_InitTypeDef  SPIConf;
 	GPIO_InitTypeDef GPIO_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
@@ -134,7 +139,12 @@ void SPI1_Slave_Init() {
 
 }
 
-static uint8_t setup_transfer(uint8_t cmd) {
+/**
+ * Sets-up DMA transfer (rx or tx) according to command received
+ * \param cmd Command received from host
+ */
+static uint8_t setup_transfer(uint8_t cmd)
+{
 	uint8_t tmp;
 
 	if (cmd & CMD_WRITE) { // WRITE
@@ -143,11 +153,11 @@ static uint8_t setup_transfer(uint8_t cmd) {
 				DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptEnable;
 				DMA1_Channel2->CNDTR = sizeof(SYS_InterruptEnable);
 				break;
-			case SYS_INTF:
+/*			case SYS_INTF:
 				DMA_Callback = SYS_IntFlagWriteHandle;
 				DMA1_Channel2->CMAR = (uint32_t)&SYS_InterruptFlag;
 				DMA1_Channel2->CNDTR = sizeof(SYS_InterruptFlag);
-				break;
+				break;*/
 			case SYS_RESET:
 				DMA_Callback = SYS_ResetHandler;
 				DMA1_Channel2->CMAR = (uint32_t)&SYS_Reset;
@@ -221,7 +231,6 @@ static uint8_t setup_transfer(uint8_t cmd) {
 				DMA1_Channel3->CNDTR = sizeof(struct can_timing_t);
 				break;
 			case CAN_RX0:
-				// switch buffer, not a callback, needs to be done rightaway
 				tmp = CANController_Rx0Handle();
 				if (tmp == 1) {
 					DMA1_Channel3->CMAR = (uint32_t)&CANController_RX0Buffer0;
@@ -256,7 +265,12 @@ static uint8_t setup_transfer(uint8_t cmd) {
 	return 1;
 }
 
-void SPI1_IRQHandler(void) {
+/**
+ * Spi Interrupt handler.
+ * Called after command byte is received.
+ */
+void SPI1_IRQHandler(void)
+{
 	static uint8_t cmd;
 	static uint8_t ret;
 
@@ -281,8 +295,11 @@ void SPI1_IRQHandler(void) {
 	}
 }
 
-/* ISR for DMA1 Channel2 */
-void DMA1_Channel2_IRQHandler(void) {
+/**
+ * DMA1 Channel2 interrupt handler
+ */
+void DMA1_Channel2_IRQHandler(void)
+{
 	// disable DMA
 	DMA1CH2EN = 0;
 	// clear int pending bit on DMA2
@@ -301,8 +318,11 @@ void DMA1_Channel2_IRQHandler(void) {
 	}
 }
 
-/* ISR for DMA1 Channel3 */
-void DMA1_Channel3_IRQHandler(void) {
+/**
+ * DMA1 Channel3 interrupt handler
+ */
+void DMA1_Channel3_IRQHandler(void)
+{
 	// disable DMA Channel
 	DMA1CH3EN = 0;
 	// clear int pending bit
@@ -320,4 +340,3 @@ void DMA1_Channel3_IRQHandler(void) {
 		DMA_Callback = NULL;
 	}
 }
-
