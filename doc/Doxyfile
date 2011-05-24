@@ -8,7 +8,8 @@ INPUT = \
 	../kernel-2.6.29/drivers/net/can/stm32bb.h \
 	pages
 EXCLUDE = \
-	../STM32_BB/lib/
+	../STM32_BB/lib/ \
+	../STM32_BB/FLASH_RUN/
 
 IMAGE_PATH = img
 

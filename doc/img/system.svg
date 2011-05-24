@@ -13,7 +13,7 @@
    height="1052.3622047"
    id="svg3029"
    version="1.1"
-   inkscape:version="0.48.0 r9654"
+   inkscape:version="0.48.1 r9760"
    sodipodi:docname="system.svg">
   <defs
      id="defs3031">
@@ -90,9 +90,9 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="1.979899"
-     inkscape:cx="497.22887"
-     inkscape:cy="602.0701"
+     inkscape:zoom="0.9899495"
+     inkscape:cx="343.16276"
+     inkscape:cy="618.76318"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -119,13 +119,6 @@
      inkscape:label="Layer 1"
      inkscape:groupmode="layer"
      id="layer1">
-    <rect
-       style="fill:none;stroke:#000000;stroke-width:1.81541145"
-       id="rect3037"
-       width="731.35144"
-       height="570.55786"
-       x="3.8391621"
-       y="142.89334" />
     <rect
        style="fill:none;stroke:#000000;stroke-width:1.81541145"
        id="rect3039"
