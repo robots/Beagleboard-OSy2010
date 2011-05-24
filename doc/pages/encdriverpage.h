@@ -24,6 +24,4 @@ This driver was based on enc28j60 driver by Claudio Lanconelli.
 - Interrupt work queue.
 - Tx work queue
 
-\section encrace RX interrupt race condition
-- Race condition in receive interrupts.
 */

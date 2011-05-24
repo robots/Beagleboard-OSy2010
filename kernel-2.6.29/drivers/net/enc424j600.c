@@ -1283,8 +1283,6 @@ static int enc424j600_int_received_packet_handler(struct enc424j600_net *priv)
  * Main handler function for the interrupt work queue.
  * Reads the interrupt flags and calls appropriate handlers.
  * Chip's global interrupt flag is down during all this.
- * \bug There is a window for race condition in this function.
- * See \ref encrace.
  * \param work Work queue structure associated with the interrupt queue.
  */
 static void enc424j600_irq_work_handler(struct work_struct *work)
@@ -1304,8 +1302,6 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 		u8 eirl;
 
 		enc424j600_read_16b_sfr(priv, EIRL, &eir);
-		/* TODO: Possible race condition here!
-		 * Is it even possible to avoid this? */
 		eirh = eir >> 8;
 		eirl = eir & 0xff;
 		enc424j600_clear_bits(priv, EIRL, eirl);
