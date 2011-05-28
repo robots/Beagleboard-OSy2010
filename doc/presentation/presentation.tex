@@ -14,9 +14,9 @@
 
 Motivation:
 \begin{itemize}
-\item Robot for Eurobot, etc.
+\item Robot controller for Eurobot, etc.
 \item Need robust platform to handle all tasks
-\item Robust bus for communication among components
+\item Bus for communication among components
 \end{itemize}
 
 We chose:
@@ -29,25 +29,26 @@ We chose:
 \begin{frame}{Beagleboard}
 \begin{columns}[c]
 
-\column{.4\textwidth}
+\column{.45\textwidth}
 :-)
 \begin{itemize}
-\item OMAP3530 - Cortex-A8, 600MHz, 128MB RAM/Flash,
+\item OMAP3530 - Cortex-A8, 600MHz
+\item 128MB RAM/Flash,
 \item 2x SPI bus 
 \item 1x I2C bus 
 \item SD-card slot
 \item USB OTG
-\item HDMI
-\item many others, ...
+\item UART, HDMI, audio, \ldots
 \end{itemize}
 
 :-(
 \begin{itemize}
 \item No RTC
 \item No network connectivity
+\item No CAN
 \end{itemize}
 
-\column{.6\textwidth}
+\column{.55\textwidth}
 \includegraphics[width=\textwidth]{../img/beagleboard}
 
 \end{columns}
@@ -56,12 +57,12 @@ We chose:
 \begin{frame}{Expansion Board}
 \centering{\includegraphics[height=.5\textheight]{../img/system}}
 \begin{itemize}
-\item Expands Beagleboard capabilities 
-\item RTC with battery
-\item 10/100Mbit Ethernet (ENC424J600)
-\item STM32 MCU (Cortex-M3 based) \begin{itemize}
-\item CAN bus
-\item Battery/power management
+	\item Expands Beagleboard capabilities 
+	\item RTC with battery
+	\item 10/100Mbit Ethernet (ENC424J600)
+	\item STM32 MCU (Cortex-M3 based) \begin{itemize}
+	\item CAN bus
+	\item Battery/power management
 \end{itemize}
 \item Exposes more BB peripherals - UART, I2C
 \end{itemize}
@@ -73,41 +74,16 @@ We chose:
 \column{.4\textwidth}
 
 \begin{itemize}
-  \item Ethernet driver
-  \item Firmware for embedded MCU
-  \item Counterpart driver for embedded MCU 
+	\item Firmware for embedded MCU
+	\item Counterpart driver for embedded MCU 
+	\item Ethernet driver
+	\item Minor U-Boot modifications
 \end{itemize}
 
 \column{.6\textwidth}
 \includegraphics[width=\textwidth]{../img/main}
 
 \end{columns}
-\end{frame}
-
-\begin{frame}{Ethernet - ENC424J600}
-\begin{itemize}
-  \item Straightforward implementation
-	\item HW designed explicitly for embedded devices.
-	\item Missing some features (atomic read'n'clear, ...)
-\end{itemize}
-
-\begin{itemize}
-\item Developed on stable 2.6.29 kernel
-\item During writing driver got forked by Indian programmer (and rejected from mainline kernel) :-)
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Ethernet - ENC424J600}
-\begin{itemize}
-	\item Working autonegotiation, 100/10Mbit, full/half duplex, low-power mode
-	\item UDP throughput: ~12Mbit (up+down) 
-	\item TCP throughput: ~2.5Mbit
-\end{itemize}
-
-\begin{itemize}
-  \item Main bottleneck is SPI (14Mbit/s raw)
-	\item Very slight improvement possible by preloading packets into ENCxxx chip
-\end{itemize}
 \end{frame}
 
 \begin{frame}{Embedded MCU - SPI communication}
@@ -117,7 +93,6 @@ Version 1:
 \begin{itemize}
 	\item 1 byte command + dummy byte + data
 	\item dummy byte = time to process command
-	\item Nested interrupts \(\skull\)
 	\item Impossible to synchronize MCU with Beagleboard.
 \end{itemize}
 
@@ -131,7 +106,7 @@ Version 2 - current:
 \begin{frame}{Embedded MCU - CAN}
 \begin{itemize}
 	\item Internal bxCAN hardware (3 message RX fifo, 3 TX mailboxes)
-  \item Implements 16 message buffer, for message bursts 
+	\item Implements 16 message buffer, for message bursts 
 	\item Fully interrupt based.
 \end{itemize}
 
@@ -150,8 +125,8 @@ Version 2 - current:
 		\item System current
 		\item AC Power
 	\end{itemize}
-	\item Uses DMA transfer to offload CPU
-	\item Uses PWM to set charging current
+	\item DMA transfers to offload CPU
+	\item PWM to set charging current
 	\item Provides interrupts on Battery low, AC present
 	\item Glitch-free AC \(\Leftrightarrow\) Battery switch
 \end{itemize}
@@ -167,6 +142,34 @@ Version 2 - current:
 	\item Two interrupts - interrupt and data ack line
 
 	\item CAN is available as network interface (ifconfig can0 up)
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Microchip ENC424J600}
+\begin{itemize}
+	\item Fast Ethernet Controller with integrated MAC and PHY
+	\item Designed specifically for embedded devices
+\end{itemize}
+
+\begin{itemize}
+	\item Missing some features (atomic read'n'clear, ...)
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{Microchip ENC424J600 -- kernel driver}
+\begin{itemize}
+	\item Straightforward implementation
+	\item Autonegotiation, 100/10Mbit, full/half duplex, low-power mode
+	\item UDP throughput: ~12Mbit
+	\item TCP throughput: ~2.5Mbit
+	\item SPI is performance bottleneck (14Mbit/s raw)
+	\item slight improvement of TX possible (\( < 10\%\))
+\end{itemize}
+
+\begin{itemize}
+	\item Developed on stable 2.6.29 kernel
+	\item During writing driver got forked by Indian programmer (and rejected from mainline) :-)
 \end{itemize}
 \end{frame}
 
@@ -189,8 +192,8 @@ Version 2 - current:
 \end{itemize}
 \end{frame}
 
-\begin{frame}{THE END.}
-\centering{THE END}
+\begin{frame}{THE END}
+\centering{Questions?}
 \end{frame}
 
 \end{document}
