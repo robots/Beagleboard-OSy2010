@@ -107,7 +107,7 @@ struct stm32bb_priv {
 };
 
 /*
- * low level HW functions 
+ * low level HW functions
  */
 static int stm32bb_spi_trans(struct spi_device *spi, uint8_t cmd, int len)
 {
@@ -275,8 +275,8 @@ static void stm32bb_hw_rx(struct spi_device *spi)
 
 		/* Extract ID with additional flags */
 		frame->can_id = buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
-		frame->can_id |= (buf[0] & CAN_MSG_RTR) ? CAN_RTR_FLAG : 0; /* rtr */
-		frame->can_id |= (buf[0] & CAN_MSG_EID) ? CAN_EFF_FLAG : 0; /* Extended ID Enable */
+		frame->can_id |= (buf[0] & CAN_MSG_RTR) ? CAN_RTR_FLAG : 0;
+		frame->can_id |= (buf[0] & CAN_MSG_EID) ? CAN_EFF_FLAG : 0;
 
 		/* Copy data */
 		memcpy(frame->data, buf + 5, frame->can_dlc);
@@ -373,7 +373,7 @@ static void stm32bb_set_normal_mode(struct spi_device *spi)
 	} else if (priv->can.ctrlmode & CAN_CTRLMODE_LISTENONLY) {
 		/* Put device into listen-only mode */
 		reg |= CAN_CTRL_SILM;
- 	} else {
+	} else {
 		/* Put device into normal mode */
 		reg |= (priv->can.ctrlmode & CAN_CTRLMODE_ONE_SHOT) ? CAN_CTRL_OSM : 0;
 	}
@@ -401,7 +401,7 @@ static int stm32bb_do_set_bittiming(struct net_device *net)
 	struct can_bittiming *bt = &priv->can.bittiming;
 	struct spi_device *spi = priv->spi;
 	uint32_t timing_reg = 0;
-	
+
 	/* Bit timing */
 	timing_reg |= ((bt->sjw) << 8) & 0x00000f00;
 	timing_reg |= ((bt->phase_seg2 - 1) << 4) & 0x000000f0;
@@ -413,7 +413,8 @@ static int stm32bb_do_set_bittiming(struct net_device *net)
 
 	stm32bb_write_reg(spi, CAN_TIMING, timing_reg, 4);
 
-	dev_info(&spi->dev, "Timing  BRP: %d SJW: %d PROP: %d TS1: %d TS2: %d\n", bt->brp, bt->sjw, bt->prop_seg, bt->phase_seg1, bt->phase_seg2);
+	dev_info(&spi->dev, "Timing  BRP: %d SJW: %d PROP: %d TS1: %d TS2: %d\n",
+		bt->brp, bt->sjw, bt->prop_seg, bt->phase_seg1, bt->phase_seg2);
 
 	return 0;
 }
@@ -436,7 +437,7 @@ static int stm32bb_can_setup(struct net_device *net, struct stm32bb_priv *priv,
 {
 	if (priv->can.state != CAN_STATE_STOPPED) {
 		dev_warn(&spi->dev, "Setup, when not in stopped state\n");
-		return 1;	
+		return 1;
 	}
 	stm32bb_do_set_bittiming(net);
 
@@ -726,10 +727,10 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 					priv->can.can_stats.error_warning++;
 					new_state = CAN_STATE_ERROR_WARNING;
 					can_id_err = CAN_ERR_CRTL;
-					}
+				}
 				if (eflag & CAN_ERR_EPVF) {
-						priv->can.can_stats.error_passive++;
-						new_state = CAN_STATE_ERROR_PASSIVE;
+					priv->can.can_stats.error_passive++;
+					new_state = CAN_STATE_ERROR_PASSIVE;
 					can_id_err = CAN_ERR_CRTL;
 				}
 				if (eflag & CAN_ERR_BOFF) {
@@ -785,6 +786,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 			/* Data in RX0 */
 			if (intf & SYS_INT_CANRX0IF) {
 				if (can_status & CAN_STAT_RXOV) {
+					net->stats.rx_fifo_errors++;
 					dev_info(&spi->dev, "Possible RX0 overflow!\n");
 				}
 #if 0
@@ -803,6 +805,7 @@ static void stm32bb_irq_work_handler(struct work_struct *ws)
 					dev_warn(&spi->dev, "Arbitration lost !\n");
 				}
 				if (can_status & CAN_STAT_TERR) {
+					net->stats.tx_errors++;
 					dev_warn(&spi->dev, "Transmit error  !\n");
 				}
 				if (can_status & CAN_STAT_TXOK) {
@@ -881,7 +884,7 @@ static irqreturn_t stm32bb_transfer_ready_isr(int irq, void *dev_id)
 }
 
 /*
- * POWER interface 
+ * POWER interface
  */
 static int stm32bb_ac_get_prop(struct power_supply *psy,
 			    enum power_supply_property psp,
@@ -1108,7 +1111,7 @@ static struct attribute_group stm32bb_attr_group = {
 
 
 /*
- * module functions 
+ * module functions
  */
 static int __devinit stm32bb_can_probe(struct spi_device *spi)
 {
@@ -1326,7 +1329,7 @@ static int stm32bb_can_suspend(struct spi_device *spi, pm_message_t state)
 
 	if (netif_running(net)) {
 		netif_device_detach(net);
-		
+
 		stm32bb_can_sleep(spi);
 		priv->after_suspend = AFTER_SUSPEND_UP;
 	} else {
