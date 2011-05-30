@@ -8,13 +8,19 @@
 #ifndef POWER_H_
 #define POWER_H_
 
-#define PWR_CTRL_ADC 0x0001 /* Enable ADC sampling */
-#define PWR_CTRL_PWM 0x0002 /* Enable PWM output for Current setting */
-#define PWR_CTRL_EN  0x0004 /* Charger enable 1 = ENABLED */
-#define PWR_CTRL_ACS 0x0008 /* AC select 1 = AC, 0 = BAT */
+/** Enable ADC sampling */
+#define PWR_CTRL_ADC 0x0001
+/** Enable PWM output for Current setting */
+#define PWR_CTRL_PWM 0x0002
+/** Charger enable 1 = ENABLED */
+#define PWR_CTRL_EN  0x0004
+/** AC select 1 = AC, 0 = BAT */
+#define PWR_CTRL_ACS 0x0008
 
-#define PWR_STAT_ALARM 0x0001 /* ALARM state */
-#define PWR_STAT_ACPRE 0x0002 /* AC present */
+/** ALARM state */
+#define PWR_STAT_ALARM 0x0001
+/** AC present state */
+#define PWR_STAT_ACPRE 0x0002
 
 struct pwr_data_t {
 	uint16_t i_bat;

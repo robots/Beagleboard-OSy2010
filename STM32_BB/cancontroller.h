@@ -9,41 +9,68 @@
 #define CANCONTROLLER_H_
 
 /* control bit fields */
-#define CAN_CTRL_INIT  0x0001 /* enter init mode */
-#define CAN_CTRL_LOOP  0x0002 /* enable loopback mode */
-#define CAN_CTRL_OSM   0x0004 /* enable One Shot Mode */
-#define CAN_CTRL_SILM  0x0008 /* Listen only - silent mode */
-#define CAN_CTRL_RST   0x0010 /* bxCan master reset */
-#define CAN_CTRL_ABOM  0x0020 /* Automatic Bus-Off Management*/
-#define CAN_CTRL_IERR  0x0080 /* Error handling enable */
+/** enter init mode */
+#define CAN_CTRL_INIT  0x0001
+/** enable loopback mode */
+#define CAN_CTRL_LOOP  0x0002
+/** enable One Shot Mode */
+#define CAN_CTRL_OSM   0x0004
+/** Listen only - silent mode */
+#define CAN_CTRL_SILM  0x0008
+/** bxCan master reset */
+#define CAN_CTRL_RST   0x0010
+/** Automatic Bus-Off Management*/
+#define CAN_CTRL_ABOM  0x0020
+/** Error handling enable */
+#define CAN_CTRL_IERR  0x0080
 
 /* status bit fields */
-#define CAN_STAT_TXF   0x0001 /* TX fifo Full */
-#define CAN_STAT_ALST  0x0004 /* Arbitration lost for last message */
-#define CAN_STAT_TERR  0x0008 /* Transmit error for last message */
-#define CAN_STAT_INAK  0x0010 /* Initialization ACK */
-#define CAN_STAT_TXOK  0x0020 /* Transmit OK */
-#define CAN_STAT_RXOV  0x0040 /* Rx overflow */
-#define CAN_STAT_RX0   0x0F00 /* no of messages queued in RX0 */
-#define CAN_STAT_RX1   0xF000 /* no of messages queued in RX1 */
+/** TX fifo Full */
+#define CAN_STAT_TXF   0x0001
+/** Arbitration lost for last message */
+#define CAN_STAT_ALST  0x0004
+/** Transmit error for last message */
+#define CAN_STAT_TERR  0x0008
+/** Initialization ACK */
+#define CAN_STAT_INAK  0x0010
+/** Transmit OK */
+#define CAN_STAT_TXOK  0x0020
+/** Rx overflow */
+#define CAN_STAT_RXOV  0x0040
+/** no of messages queued in RX0 */
+#define CAN_STAT_RX0   0x0F00
 
 /* error bit fields */
-#define CAN_ERR_REC    0xFF000000 /* Receive error count */
-#define CAN_ERR_TEC    0x00FF0000 /* Transmit error count */
-#define CAN_ERR_LEC    0x00000070 /* Last error code */
-#define CAN_ERR_BOFF   0x00000004 /* Bus-off */
-#define CAN_ERR_EPVF   0x00000002 /* Error passive */
-#define CAN_ERR_EWGF   0x00000001 /* Error warning */
+/** Receive error count */
+#define CAN_ERR_REC    0xFF000000
+/** Transmit error count */
+#define CAN_ERR_TEC    0x00FF0000
+/** Last error code */
+#define CAN_ERR_LEC    0x00000070
+/** Bus-off */
+#define CAN_ERR_BOFF   0x00000004
+/** Error passive */
+#define CAN_ERR_EPVF   0x00000002
+/** Error warning */
+#define CAN_ERR_EWGF   0x00000001
 
 /* LEC field */
-#define CAN_LEC_NOERR  0x00 /* No Error */
-#define CAN_LEC_STUFF  0x01 /* Stuff Error */
-#define CAN_LEC_FORM   0x02 /* Form Error */
-#define CAN_LEC_ACK    0x03 /* Ack Error */
-#define CAN_LEC_BRE    0x04 /* Bit recessive Error */
-#define CAN_LEC_BDE    0x05 /* Bit dominant Error */
-#define CAN_LEC_CRC    0x06 /* CRC Error */
-#define CAN_LEC_SW     0x07 /* Set by software */
+/** No Error */
+#define CAN_LEC_NOERR  0x00
+/** Stuff Error */
+#define CAN_LEC_STUFF  0x01
+/** Form Error */
+#define CAN_LEC_FORM   0x02
+/** Ack Error */
+#define CAN_LEC_ACK    0x03
+/** Bit recessive Error */
+#define CAN_LEC_BRE    0x04
+/** Bit dominant Error */
+#define CAN_LEC_BDE    0x05
+/** CRC Error */
+#define CAN_LEC_CRC    0x06
+/** Set by software */
+#define CAN_LEC_SW     0x07
 
 
 
@@ -52,9 +79,13 @@ struct can_timing_t {
 	uint16_t ts; // res[15] lbkm[14] res[13:10] swj[9:8] res[7] ts2[6:4] ts1[3:0]
 } __attribute__ ((packed));
 
+/** Data length */
 #define CAN_MSG_SIZE  0x0F // DLC[0:3]
+/** Remote request */
 #define CAN_MSG_RTR   0x10 // RTR[4]
+/** Extended id */
 #define CAN_MSG_EID   0x20 // EID[5]
+/** Message invalid */
 #define CAN_MSG_INV   0x40 // is message invalid
 
 struct can_message_t {
