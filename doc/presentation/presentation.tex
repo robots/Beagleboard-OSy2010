@@ -1,5 +1,6 @@
 % small.tex
-\RequirePackage{atbegshi} 
+\RequirePackage{atbegshi}
+
 \documentclass{beamer}
 \usetheme[height=7mm]{Rochester}
 
@@ -7,8 +8,19 @@
 \usepackage{hyperref}
 \usepackage{skull}
 \usepackage{verbatim}
+\usepackage[utf8]{inputenc} 
+\usepackage[T1]{fontenc}
+\usepackage[czech,english]{babel}
+
+
+\title{OSy: Demín, Marek}
+\author{Michal Demín, Kuba Marek}
+\date{}
+
 
 \begin{document}
+
+\titlepage
 
 \begin{frame}{Intro}
 
@@ -57,7 +69,6 @@ We chose:
 \begin{frame}{Expansion Board}
 \centering{\includegraphics[height=.5\textheight]{../img/system}}
 \begin{itemize}
-	\item Expands Beagleboard capabilities 
 	\item RTC with battery
 	\item 10/100Mbit Ethernet (ENC424J600)
 	\item STM32 MCU (Cortex-M3 based) \begin{itemize}
