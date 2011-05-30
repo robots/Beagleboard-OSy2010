@@ -17,10 +17,9 @@
 \author{Michal Demín, Kuba Marek}
 \date{}
 
-
 \begin{document}
 
-\titlepage
+\frame[plain]{\titlepage}
 
 \begin{frame}{Intro}
 
@@ -53,6 +52,16 @@ We chose:
 \item UART, HDMI, audio, \ldots
 \end{itemize}
 
+\column{.55\textwidth}
+\includegraphics[width=\textwidth]{../img/beagleboard}
+
+\end{columns}
+\end{frame}
+
+\begin{frame}{Beagleboard}
+\begin{columns}[c]
+
+\column{.45\textwidth}
 :-(
 \begin{itemize}
 \item No RTC
@@ -158,12 +167,12 @@ Version 2 - current:
 
 \begin{frame}{Microchip ENC424J600}
 \begin{itemize}
-	\item Fast Ethernet Controller with integrated MAC and PHY
+	\item Fast Ethernet Controller
+	\item Integrated MAC and PHY
+	\item 24kB SRAM (TX and RX buffers)
+	\item HW crypto engines (AES, MD5, SHA1, \ldots)
+	\item SPI and parallel interface
 	\item Designed specifically for embedded devices
-\end{itemize}
-
-\begin{itemize}
-	\item Missing some features (atomic read'n'clear, ...)
 \end{itemize}
 
 \end{frame}
@@ -171,16 +180,19 @@ Version 2 - current:
 \begin{frame}{Microchip ENC424J600 -- kernel driver}
 \begin{itemize}
 	\item Straightforward implementation
-	\item Autonegotiation, 100/10Mbit, full/half duplex, low-power mode
+	\item Supported features
+	\begin{itemize}
+		\item 10/100Mbit
+		\item Full/half duplex
+		\item Low-power mode
+		\item Autonegotiation
+	\end{itemize}
 	\item UDP throughput: ~12Mbit
 	\item TCP throughput: ~2.5Mbit
 	\item SPI is performance bottleneck (14Mbit/s raw)
-	\item slight improvement of TX possible (\( < 10\%\))
-\end{itemize}
-
-\begin{itemize}
+	\item Slight improvement of TX performance possible (\( < 10\%\))
 	\item Developed on stable 2.6.29 kernel
-	\item During writing driver got forked by Indian programmer (and rejected from mainline) :-)
+	\item Forked by Indian programmer and rejected from mainline :-)
 \end{itemize}
 \end{frame}
 
@@ -190,6 +202,14 @@ Version 2 - current:
 	\item Initializes basic HW and sets up pin multiplexing
 	\item Pin muxing changed to support our expansion board
 	\item Careful when replacing! Leads to bricked HW
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Board info}
+\begin{itemize}
+	\item Specify peripherials of the CPU
+	\item SPI, interrupt pins, I2C, GPIO
+	\item Modified from beagleboard default
 \end{itemize}
 \end{frame}
 
@@ -203,8 +223,10 @@ Version 2 - current:
 \end{itemize}
 \end{frame}
 
-\begin{frame}{THE END}
-\centering{Questions?}
+\begin{frame}{The end}
+\begin{center}
+Questions?
+\end{center}
 \end{frame}
 
 \end{document}
