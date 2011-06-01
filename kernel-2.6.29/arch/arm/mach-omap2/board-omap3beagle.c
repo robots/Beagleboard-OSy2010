@@ -334,7 +334,7 @@ static int stm32bb_setup(struct spi_device *spi)
 
 static struct stm32bb_platform_data stm32bb_info = {
 	.board_specific_setup	= &stm32bb_setup,
-	.transfer_ready				= OMAP_GPIO_IRQ(140)
+	.transfer_ready		= OMAP_GPIO_IRQ(140)
 };
 
 static struct spi_board_info beagle_spi_board_info[] = {
