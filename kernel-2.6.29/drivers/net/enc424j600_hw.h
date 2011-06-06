@@ -431,7 +431,7 @@
 /* Size in bytes of the receive buffer in enc424j600.
  * Must be word aligned (even).
  */
-#define RX_BUFFER_SIZE		(8 * MAX_FRAMELEN)
+#define RX_BUFFER_SIZE		(15 * MAX_FRAMELEN)
 
 
 /* Start of the general purpose area in sram */
