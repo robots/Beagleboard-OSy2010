@@ -3,10 +3,13 @@
 
 \mainpage
 
-Our project for OSy was writing software for BeagleBoard with some additional custom
-hardware. Description of our HW can be found on \ref hwpage "this page"
+\image html main_small.jpg
+
+Our project for OSy was writing software for BeagleBoard with additional custom
+hardware.
 
 Software part of our project consists of:
+- \ref hwpage Description of our HW
 - \ref ubootpage "U-boot modification"
 - \ref stmfwpage "Firmware for embedded STM32 MCU"
 - \ref stmdriverpage "Linux driver - counterpart for STM32 Firmware"
