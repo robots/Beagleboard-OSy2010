@@ -1168,7 +1168,7 @@ static void enc424j600_tx_clear(struct enc424j600_net *priv, bool err)
  * Only counts it ...
  * \param priv The enc424j600 structure.
  */
-static void enc424j600_int_rx_abbort_handler(struct enc424j600_net *priv)
+static void enc424j600_int_rx_abort_handler(struct enc424j600_net *priv)
 {
 	if (netif_msg_intr(priv))
 		printk(KERN_DEBUG DRV_NAME
@@ -1330,7 +1330,7 @@ static void enc424j600_irq_work_handler(struct work_struct *work)
 
 		/* RX Error handler */
 		if ((eirl & RXABTIF) != 0)
-			enc424j600_int_rx_abbort_handler(priv);
+			enc424j600_int_rx_abort_handler(priv);
 
 		/* RX handler */
 		if ((eirl & PKTIF) != 0)
