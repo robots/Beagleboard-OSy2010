@@ -1,6 +1,11 @@
-/*
- * enc424j600_hw.h: Register definitions
+/**
+ * \file
+ * ENC424J600 -- register definitions for enc424j600.c
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #ifndef _ENC424J600_HW_H
@@ -17,7 +22,8 @@
 #define BANK_MASK	0x60
 #define BANK_SHIFT	5
 
-/* All-bank registers */
+/** \name All-bank registers */
+/** @{ */
 #define EUDASTL		0x16
 #define EUDASTH		0x17
 #define EUDANDL		0x18
@@ -28,8 +34,10 @@
 #define EIRH		0x1D
 #define ECON1L		0x1E
 #define ECON1H		0x1F
+/** @} */
 
-/* Bank 0 registers */
+/** \name Bank 0 registers */
+/** @{ */
 #define ETXSTL		(0x00 | 0x00)
 #define ETXSTH		(0x01 | 0x00)
 #define ETXLENL		(0x02 | 0x00)
@@ -52,8 +60,10 @@
 #define ETXSTATH	(0x13 | 0x00)
 #define ETXWIREL	(0x14 | 0x00)
 #define ETXWIREH	(0x15 | 0x00)
+/** @} */
 
-/* Bank 1 registers */
+/** \name Bank 1 registers */
+/** @{ */
 #define EHT1L		(0x00 | 0x20)
 #define EHT1H		(0x01 | 0x20)
 #define EHT2L		(0x02 | 0x20)
@@ -76,8 +86,10 @@
 #define EPMOH		(0x13 | 0x20)
 #define ERXFCONL	(0x14 | 0x20)
 #define ERXFCONH	(0x15 | 0x20)
+/** @} */
 
-/* Bank 2 registers */
+/** \name Bank 2 registers */
+/** @{ */
 #define MACON1L		(0x00 | 0x40)
 #define MACON1H		(0x01 | 0x40)
 #define MACON2L		(0x02 | 0x40)
@@ -94,8 +106,10 @@
 #define MICMDH		(0x13 | 0x40)
 #define MIREGADRL	(0x14 | 0x40)
 #define MIREGADRH	(0x15 | 0x40)
+/** @} */
 
-/* Bank 3 registers */
+/** \name Bank 3 registers */
+/** @{ */
 #define MAADR3L		(0x00 | 0x60)
 #define MAADR3H		(0x01 | 0x60)
 #define MAADR2L		(0x02 | 0x60)
@@ -118,8 +132,10 @@
 #define EIEH		(0x13 | 0x60)
 #define EIDLEDL		(0x14 | 0x60)
 #define EIDLEDH		(0x15 | 0x60)
+/** @} */
 
-/* Unbanked registers */
+/** \name Unbanked registers */
+/** @{ */
 #define EGPDATA		(0x00 | 0x80)
 #define ERXDATA		(0x02 | 0x80)
 #define EUDADATA	(0x04 | 0x80)
@@ -135,8 +151,10 @@
 #define EUDARDPTH	(0x0F | 0x80)
 #define EUDAWRPTL	(0x10 | 0x80)
 #define EUDAWRPTH	(0x11 | 0x80)
+/** @} */
 
-/* PHY registers */
+/** \name PHY registers */
+/** @{ */
 #define PHCON1		0x00
 #define PHSTAT1		0x01
 #define PHANA		0x04
@@ -145,67 +163,77 @@
 #define PHCON2		0x11
 #define PHSTAT2		0x1B
 #define PHSTAT3		0x1F
+/** @} */
 
-/* Single-byte instructions */
+/** \name Single-byte instructions */
+/** @{ */
 #define BXSEL(bank)	(0xC0 | (bank & (BANK_MASK >> BANK_SHIFT)) << 1)
-				/* Bank X Select */
-#define B0SEL		0xC0	/* Bank 0 Select */
-#define B1SEL		0xC2	/* Bank 1 Select */
-#define B2SEL		0xC4	/* Bank 2 Select */
-#define B3SEL		0xC6	/* Bank 3 Select */
-#define SETETHRST	0xCA	/* System Reset */
-#define FCDISABLE	0xE0	/* Flow Control Disable */
-#define FCSINGLE	0xE2	/* Flow Control Single */
-#define FCMULTIPLE	0xE4	/* Flow Control Multiple */
-#define FCCLEAR		0xE6	/* Flow Control Clear */
-#define SETPKTDEC	0xCC	/* Decrement Packet Counter */
-#define DMASTOP		0xD2	/* DMA Stop */
-#define DMACKSUM	0xD8	/* DMA Start Checksum */
-#define DMACKSUMS	0xDA	/* DMA Start Checksum with Seed */
-#define DMACOPY		0xDC	/* DMA Start Copy */
-#define DMACOPYS	0xDE	/* DMA Start Copy and Checksum with Seed */
-#define SETTXRTS	0xD4	/* Request Packet Transmission */
-#define ENABLERX	0xE8	/* Enable RX */
-#define DISABLERX	0xEA	/* Disable RX */
-#define SETEIE		0xEC	/* Enable Interrupts */
-#define CLREIE		0xEE	/* Disable Interrupts */
+				/**< Bank X Select */
+#define B0SEL		0xC0	/**< Bank 0 Select */
+#define B1SEL		0xC2	/**< Bank 1 Select */
+#define B2SEL		0xC4	/**< Bank 2 Select */
+#define B3SEL		0xC6	/**< Bank 3 Select */
+#define SETETHRST	0xCA	/**< System Reset */
+#define FCDISABLE	0xE0	/**< Flow Control Disable */
+#define FCSINGLE	0xE2	/**< Flow Control Single */
+#define FCMULTIPLE	0xE4	/**< Flow Control Multiple */
+#define FCCLEAR		0xE6	/**< Flow Control Clear */
+#define SETPKTDEC	0xCC	/**< Decrement Packet Counter */
+#define DMASTOP		0xD2	/**< DMA Stop */
+#define DMACKSUM	0xD8	/**< DMA Start Checksum */
+#define DMACKSUMS	0xDA	/**< DMA Start Checksum with Seed */
+#define DMACOPY		0xDC	/**< DMA Start Copy */
+#define DMACOPYS	0xDE	/**< DMA Start Copy and Checksum with Seed */
+#define SETTXRTS	0xD4	/**< Request Packet Transmission */
+#define ENABLERX	0xE8	/**< Enable RX */
+#define DISABLERX	0xEA	/**< Disable RX */
+#define SETEIE		0xEC	/**< Enable Interrupts */
+#define CLREIE		0xEE	/**< Disable Interrupts */
+/** @} */
 
-/* Two byte instructions */
-#define RBSEL		0xC8	/* Read Bank Select */
+/** \name Two byte instructions */
+/** @{ */
+#define RBSEL		0xC8	/**< Read Bank Select */
+/** @} */
 
-/* Three byte instructions */
-#define WGPRDPT		0x60	/* Write EGPRDPT */
-#define RGPRDPT		0x62	/* Read EGPRDPT */
-#define WRXRDPT		0x64	/* Write ERXRDPT */
-#define RRXRDPT		0x66	/* Read ERXRDPT */
-#define WUDARDPT	0x68	/* Write EUDARDPT */
-#define RUDARDPT	0x6A	/* Read EUDARDPT */
-#define WGPWRPT		0x6C	/* Write EGPWRPT */
-#define RGPWRPT		0x6E	/* Read EGPWRPT */
-#define WRXWRPT		0x70	/* Write ERXWRPT */
-#define RRXWRPT		0x72	/* Read ERXWRPT */
-#define WUDAWRPT	0x74	/* Write EUDAWRPT */
-#define RUDAWRPT	0x76	/* Read EUDAWRPT */
+/** \name Three byte instructions */
+/** @{ */
+#define WGPRDPT		0x60	/**< Write EGPRDPT */
+#define RGPRDPT		0x62	/**< Read EGPRDPT */
+#define WRXRDPT		0x64	/**< Write ERXRDPT */
+#define RRXRDPT		0x66	/**< Read ERXRDPT */
+#define WUDARDPT	0x68	/**< Write EUDARDPT */
+#define RUDARDPT	0x6A	/**< Read EUDARDPT */
+#define WGPWRPT		0x6C	/**< Write EGPWRPT */
+#define RGPWRPT		0x6E	/**< Read EGPWRPT */
+#define WRXWRPT		0x70	/**< Write ERXWRPT */
+#define RRXWRPT		0x72	/**< Read ERXWRPT */
+#define WUDAWRPT	0x74	/**< Write EUDAWRPT */
+#define RUDAWRPT	0x76	/**< Read EUDAWRPT */
+/** @} */
 
-/* n byte instructions */
+/** \name n byte instructions */
+/** @{ */
 #define RCR(addr)	(0x00 | (addr & ADDR_MASK))
-	/* Read Control Register */
+	/**< Read Control Register */
 #define WCR(addr)	(0x40 | (addr & ADDR_MASK))
-	/* Write Control Register */
-#define RCRU		0x20	/* Read Control Register Unbanked */
-#define WCRU		0x22	/* Write Control Register Unbanked */
-#define BFS(addr)	(0x80 | (addr & ADDR_MASK))	/* Bit Field Set */
-#define BFC(addr)	(0xA0 | (addr & ADDR_MASK))	/* Bit Field Clear */
-#define BFSU		0x24	/* Bit Field Set Unbanked */
-#define BFCU		0x26	/* Bit Field Clear Unbanked */
-#define RGPDATA		0x28	/* Read EGPDATA */
-#define WGPDATA		0x2A	/* Write EGPDATA */
-#define RRXDATA		0x2C	/* Read ERXDATA */
-#define WRXDATA		0x2E	/* Write ERXDATA */
-#define RUDADATA	0x30	/* Read EUDADATA */
-#define WUDADATA	0x32	/* Write EUDADATA */
+	/**< Write Control Register */
+#define RCRU		0x20	/**< Read Control Register Unbanked */
+#define WCRU		0x22	/**< Write Control Register Unbanked */
+#define BFS(addr)	(0x80 | (addr & ADDR_MASK))	/**< Bit Field Set */
+#define BFC(addr)	(0xA0 | (addr & ADDR_MASK))	/**< Bit Field Clear */
+#define BFSU		0x24	/**< Bit Field Set Unbanked */
+#define BFCU		0x26	/**< Bit Field Clear Unbanked */
+#define RGPDATA		0x28	/**< Read EGPDATA */
+#define WGPDATA		0x2A	/**< Write EGPDATA */
+#define RRXDATA		0x2C	/**< Read ERXDATA */
+#define WRXDATA		0x2E	/**< Write ERXDATA */
+#define RUDADATA	0x30	/**< Read EUDADATA */
+#define WUDADATA	0x32	/**< Write EUDADATA */
+/** @} */
 
-/* Register bit definitions */
+/** \name Register bit definitions */
+/** @{ */
 /* ESTATH */
 #define INT		(1 << 7)
 #define FCIDLE		(1 << 6)
@@ -295,28 +323,6 @@
 #define HFRMEN		(1 << 2)
 #define FULDPX		(1 << 0)
 
-/* MAIPG */
-/* value of the high byte is given by the reserved bits,
- * value of the low byte is recomended setting of the
- * IPG parameter.
- */
-#define MAIPGH_VAL	0x0C
-#define MAIPGL_VAL	0x12
-
-/* MABBIPG */
-/* back to back inter-packet gap
- * There are two values -- one for half duplex and another for
- * full duplex
- * -> datasheet section 8.9
- */
-#define MABBIPG_HALF_VAL	0x12
-#define MABBIPG_FULL_VAL	0x15
-/* MIREGADRH */
-#define MIREGADRH_VAL	0x01
-
-/* MIREGADRL */
-#define PHREG_MASK	0x1F
-
 /* MICMDL */
 #define MIISCAN		(1 << 1)
 #define MIIRD		(1 << 0)
@@ -371,17 +377,6 @@
 #define LBCFG1		(1 << 1)
 #define LBCFG0		(1 << 0)
 
-/* EIDLEDL */
-#define DEVID_SHIFT	5
-#define DEVID_MASK	(0x7 << DEVID_SHIFT)
-#define REVID_SHIFT	0
-#define REVID_MASK	(0x1F << REVID_SHIFT)
-
-/* PHANA */
-/* Default value for PHY initialization
- */
-#define PHANA_DEFAULT	0x05E1
-
 /* PHCON1 */
 #define PRST		(1 << 15)
 #define PLOOPBK		(1 << 14)
@@ -406,6 +401,40 @@
 #define SPDDPX2		(1 << 4)
 #define SPDDPX1		(1 << 3)
 #define SPDDPX0		(1 << 2)
+/** @} */
+
+/* MAIPG */
+/* value of the high byte is given by the reserved bits,
+ * value of the low byte is recomended setting of the
+ * IPG parameter.
+ */
+#define MAIPGH_VAL	0x0C
+#define MAIPGL_VAL	0x12
+
+/* MABBIPG */
+/* back to back inter-packet gap
+ * There are two values -- one for half duplex and another for
+ * full duplex
+ * -> datasheet section 8.9
+ */
+#define MABBIPG_HALF_VAL	0x12
+#define MABBIPG_FULL_VAL	0x15
+/* MIREGADRH */
+#define MIREGADRH_VAL	0x01
+
+/* MIREGADRL */
+#define PHREG_MASK	0x1F
+
+/* EIDLEDL */
+#define DEVID_SHIFT	5
+#define DEVID_MASK	(0x7 << DEVID_SHIFT)
+#define REVID_SHIFT	0
+#define REVID_MASK	(0x1F << REVID_SHIFT)
+
+/* PHANA */
+/* Default value for PHY initialization
+ */
+#define PHANA_DEFAULT	0x05E1
 
 #define EUDAST_TEST_VAL	0x1234
 
@@ -423,8 +452,6 @@
 #define LED_B_SETTINGS		0x8
 
 /* maximum ethernet frame length
- * TODO: Is it OK to use the huge frame enable feature and still
- * have limited frame length in all the other parts of the code?
  */
 #define MAX_FRAMELEN		1518
 
