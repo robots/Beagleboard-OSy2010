@@ -1506,9 +1506,9 @@ static int enc424j600_net_close(struct net_device *ndev)
 	if (netif_msg_drv(priv))
 		printk(KERN_DEBUG DRV_NAME ": %s() enter\n", __func__);
 
+	netif_stop_queue(ndev);
 	enc424j600_hw_disable(priv);
 	enc424j600_lowpower_enable(priv);
-	netif_stop_queue(ndev);
 
 	return 0;
 }
