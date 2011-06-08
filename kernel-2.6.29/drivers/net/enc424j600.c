@@ -1415,7 +1415,7 @@ static void enc424j600_tx_work_handler(struct work_struct *work)
 /**
  * Interrupt handler for the interrupts from enc424j600.
  * Only launches the irq work queue.
- * See \ref encint
+ * See \ref encdriverirq
  */
 static irqreturn_t enc424j600_irq(int irq, void *dev_id)
 {
