@@ -3,7 +3,7 @@
 */
 
 /**
-\page encdriverpage Linux driver for Microchip ENC424j600 Ethernet controller
+\page encdriverpage Linux Driver For Microchip ENC424j600 Ethernet Controller
 
 Our enc424j600 driver is based on enc28j60 driver by Claudio Lanconelli.
 

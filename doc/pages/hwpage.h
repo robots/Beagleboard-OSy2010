@@ -3,7 +3,6 @@
 
 \page hwpage Hardware description
 
-
 \section hwpagebeagle Beagleboard
 The system is based on Beagleboard. Low cost OMAP3530 development board. More about this board can be found here http://beagleboard.org
 Beagleboard provides expansion connector with multiple processor peripherals exposed - SPI, MMC, GPIO, etc.

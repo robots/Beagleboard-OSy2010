@@ -1,7 +1,7 @@
 /**
 \file This file contains only documentation page for doxygen 
 
-\page ubootpage U-boot modification to enable different pin muxing
+\page ubootpage U-boot modification
 
 Out \ref hwpage "custom hardware" uses SPI to exchange information with the beagleboard.
 Stock configuration does not enable SPI peripheral on the expansion connector.

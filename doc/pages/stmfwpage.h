@@ -1,7 +1,7 @@
 /**
 \file This file contains only documentation page for doxygen 
 
-\page stmfwpage STM32 firmware description
+\page stmfwpage Firmware for embedded STM32 MCU
 
 
 - firmware sa stara o:
