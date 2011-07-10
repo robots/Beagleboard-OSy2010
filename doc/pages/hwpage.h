@@ -12,27 +12,18 @@ Beagleboard provides expansion connector with multiple processor peripherals exp
 
 \section hwpageexpansion Expansion Board
 
-Our custom expansion board contains \ref hwpageenc "ethernet controller chip", STM32 mircocontroller,
-battery managenment. This board provides CAN bus and Ethernet connectivity, battery charging and
+\image html system.svg "Expansion Board Connections"
+
+Our custom expansion board board connects to the epansion header of Beagleboard.
+Itcontains ethernet controller chip, STM32 mircocontroller and battery managenment.
+The board provides CAN bus and Ethernet connectivity, battery charging and
 power managenment for the whole system.
 
-- level translator
+\todo level translator
 
-- popisat ako funguje stm32
-
-- popisat ako funguje nabijacka
-
-Our expansion board connects to the epansion header of Beagleboard, adds
-several peripherials and exposes more UART and I2C interfaces of Beagleboard.
-
-- Real time clock with battery
-- \ref hwpageenc "10/100Mbit Ethernet"
-- STM32 MCU (Cortex-M3 based)
-	- CAN bus
-	- Battery/power management
-Exposes more BB peripherals - UART, I2C
-
-\image html system.svg "Expansion Board Connections"
+\subsection hwpagestm32 STM32
+STM32 is a 32bit microcontroller based on ARM Cortex-M3.
+\todo stm32
 
 \subsection hwpageenc Microchip ENC424j600
 Microchip ENC424j600 is an fast ethernet controller with integrated MAC and PHY.
@@ -45,5 +36,8 @@ Its features include:
 - SPI and parallel interface
 
 The chip is connected via the SPI interface and uses one interrupt channel.
+
+\subsection hwpagecharger Charger and Power Management
+\todo charger
 
 */
