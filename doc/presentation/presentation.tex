@@ -19,7 +19,14 @@
 
 \begin{document}
 
-\frame[plain]{\titlepage}
+\begin{frame}[plain]
+\titlepage
+Linux drivers and firmware for a custom board for BeagleBoard.
+\end{frame}
+
+\begin{frame}{Intro}
+\includegraphics[height=\textheight]{../img/main}
+\end{frame}
 
 \begin{frame}{Intro}
 
@@ -30,7 +37,7 @@ Motivation:
 \item Bus for communication among components
 \end{itemize}
 
-We chose:
+What was chosen:
 \begin{itemize}
 \item Beagleboard
 \item Controller Area Network - CAN
@@ -90,20 +97,32 @@ We chose:
 
 \begin{frame}{What did we do}
 
-\begin{columns}[c]
-\column{.4\textwidth}
-
 \begin{itemize}
 	\item Firmware for embedded MCU
+	\begin{itemize}
+		\item CAN
+		\item Power management
+	\end{itemize}
 	\item Counterpart driver for embedded MCU 
+	\begin{itemize}
+		\item SocketCAN
+		\item Power management
+	\end{itemize}
 	\item Ethernet driver
+	\item Real time clock support
 	\item Minor U-Boot modifications
 \end{itemize}
 
-\column{.6\textwidth}
-\includegraphics[width=\textwidth]{../img/main}
+\end{frame}
 
-\end{columns}
+\begin{frame}{Embedded MCU}
+
+\begin{itemize}
+	\item Communicates with host using SPI
+	\item Exposes CAN interface
+	\item Monitors charging
+\end{itemize}
+
 \end{frame}
 
 \begin{frame}{Embedded MCU - SPI communication}
@@ -155,13 +174,15 @@ Version 2 - current:
 \begin{frame}{Kernel counterpart driver}
 \begin{itemize}
 	\item CAN through SocketCAN (netdev)
+	\begin{itemize}
+		\item CAN is available as network interface (ifconfig can0 up)
+	\end{itemize}
 	\item Power through Linux Power API
 	\item Some additional features available only as /sys entry
 
 	\item All communication through SPI
 	\item Two interrupts - interrupt and data ack line
 
-	\item CAN is available as network interface (ifconfig can0 up)
 \end{itemize}
 \end{frame}
 
@@ -187,8 +208,7 @@ Version 2 - current:
 		\item Low-power mode
 		\item Autonegotiation
 	\end{itemize}
-	\item UDP throughput: ~12Mbit
-	\item TCP throughput: ~2.5Mbit
+	\item UDP throughput: about 12Mbit
 	\item SPI is performance bottleneck (14Mbit/s raw)
 	\item Slight improvement of TX performance possible (\( < 10\%\))
 	\item Developed on stable 2.6.29 kernel
@@ -201,11 +221,11 @@ Version 2 - current:
 	\item Bootloader for ARM and other processors
 	\item Initializes basic HW and sets up pin multiplexing
 	\item Pin muxing changed to support our expansion board
-	\item Careful when replacing! Leads to bricked HW
+	\item Careful when replacing! Leads to (nearly) bricked HW
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Board info}
+\begin{frame}{Kernel - Board info}
 \begin{itemize}
 	\item Specify peripherials of the CPU
 	\item SPI, interrupt pins, I2C, GPIO
@@ -218,7 +238,9 @@ Version 2 - current:
 	\item Time time time :-)
 	\item Nested interrupts are evil \(\skull\)
 	\item Protocol design is crucial
-	\item "Read and clear"
+	\begin{itemize}
+		\item "Read and clear"
+	\end{itemize}
 	\item GPIO\_148 is not GPIO\_149
 \end{itemize}
 \end{frame}
